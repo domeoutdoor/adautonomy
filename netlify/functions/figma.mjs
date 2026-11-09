@@ -172,17 +172,36 @@ async function figma(path, auth) {
 const box = n => n.absoluteBoundingBox || n.absoluteRenderBounds || {};
 const frameOf = (n, section) => ({ id: n.id, name: n.name, type: n.type, w: Math.round(box(n).width || 0), h: Math.round(box(n).height || 0), section: section || null });
 
-// Frames directly on a page, plus frames inside sections (one level). Groups of frames are opened one level too.
+// Deliverable frames are the ones with a UAID in the name. Studios nest them: page -> "Advertising" -> "Layout design" -> frames,
+// so this walks down through frames, sections and groups that have no UAID of their own, a few levels deep, fetching the
+// children Figma left out. The first container's name is kept as the frame's section (usually the platform).
+const UAID_RE = /\d{5}-\d{6}/;
+const SKIP_RE = /^(main components?|components?|status|title|legend|notes?|cover|thumbnail)$/i;
+const CONTAINER = n => FRAME_TYPES.has(n.type) || n.type === 'SECTION' || n.type === 'GROUP';
 async function collect(fileKey, nodes, auth) {
-  const frames = []; const openIds = [];
-  for (const n of nodes) {
-    if (FRAME_TYPES.has(n.type)) frames.push(frameOf(n));
-    else if (n.type === 'SECTION' || n.type === 'GROUP') { if (n.children) frames.push(...n.children.filter(c => FRAME_TYPES.has(c.type)).map(c => frameOf(c, n.name))); else openIds.push(n); }
-  }
-  for (let i = 0; i < openIds.length; i += 40) {
-    const ids = openIds.slice(i, i + 40).map(n => n.id);
-    const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(ids.join(','))}&depth=1`, auth);
-    for (const n of openIds.slice(i, i + 40)) { const doc = r.nodes?.[n.id]?.document; frames.push(...(doc?.children || []).filter(c => FRAME_TYPES.has(c.type)).map(c => frameOf(c, n.name))); }
+  const frames = [];
+  let pending = nodes.filter(CONTAINER).map(n => ({ n, section: null, top: true }));
+  for (let level = 0; level < 5 && pending.length; level++) {
+    const next = []; const toFetch = [];
+    for (const item of pending) {
+      const { n, section, top } = item;
+      if (FRAME_TYPES.has(n.type) && UAID_RE.test(n.name)) { frames.push(frameOf(n, section)); continue; }
+      if (SKIP_RE.test((n.name || '').trim())) continue;
+      if (n.children) item.children = n.children; else toFetch.push(item);
+    }
+    for (let i = 0; i < toFetch.length; i += 40) {
+      const batch = toFetch.slice(i, i + 40);
+      const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(batch.map(b => b.n.id).join(','))}&depth=1`, auth);
+      for (const b of batch) b.children = r.nodes?.[b.n.id]?.document?.children || [];
+    }
+    for (const item of pending) {
+      if (!item.children) continue;
+      const kids = item.children.filter(CONTAINER);
+      const sec = item.section || (item.top ? item.n.name : null);
+      if (kids.length) next.push(...kids.map(k => ({ n: k, section: sec, top: false })));
+      else if (FRAME_TYPES.has(item.n.type) && !item.top) frames.push(frameOf(item.n, item.section)); // a leaf without a UAID: mockup or reference
+    }
+    pending = next;
   }
   return frames;
 }
@@ -194,7 +213,7 @@ async function list(fileKey, nodeId, auth) {
     if (!doc) throw err('figma_not_found', 'That node is not in the file any more.', 404);
     let frames;
     if (doc.type === 'CANVAS' || doc.type === 'SECTION' || doc.type === 'GROUP') frames = await collect(fileKey, doc.children || [], auth);
-    else if (FRAME_TYPES.has(doc.type)) { const inner = (doc.children || []).filter(c => FRAME_TYPES.has(c.type)); frames = inner.length >= 2 && !/\d{5}-\d{6}/.test(doc.name) ? inner.map(c => frameOf(c, doc.name)) : [frameOf(doc)]; }
+    else if (FRAME_TYPES.has(doc.type)) { frames = UAID_RE.test(doc.name) ? [frameOf(doc)] : await collect(fileKey, [doc], auth); if (!frames.length) frames = [frameOf(doc)]; }
     else frames = [];
     return { fileKey, name: r.name || '', lastModified: r.lastModified || null, scoped: doc.name, pages: [{ id: doc.id, name: doc.type === 'CANVAS' ? doc.name : `${doc.name} (${doc.type.toLowerCase()})`, frames }] };
   }
