@@ -164,7 +164,14 @@ async function figma(path, auth) {
     if (/plan|enterprise|organization|admin|REST API|disabled/i.test(detail)) throw err('figma_denied', `Figma refused access to this file (Figma said: ${detail}). The owner's Figma organization may block API access; a Figma admin at the organization can allow it. Or drop the exported frames instead.`, 403);
     throw err('figma_denied', `This board is not open to ${whoTxt}${detail ? ` (Figma said: ${detail})` : ''}. ${auth.oauth ? 'Open the board in Figma to confirm you can see it, or ask the owner to share it with you' : 'Ask whoever owns the board to share it with that address (view is enough), or to set the file\'s sharing to "Anyone with the link can view"'}, then paste the link again. Or drop the exported frames instead.`, 403);
   }
-  if (r.status === 429) { const wait = Number(r.headers.get('retry-after')) || 60; const e = err('figma_rate_limit', `Figma is pausing this connection for a moment (it limits how often a file can be read). Try again in about ${wait >= 60 ? Math.ceil(wait / 60) + ' minute' + (wait >= 120 ? 's' : '') : wait + ' seconds'}.`, 429); e.retryAfter = wait; throw e; }
+  if (r.status === 429) {
+    const wait = Number(r.headers.get('retry-after')) || 60; const low = (r.headers.get('x-figma-rate-limit-type') || '') === 'low';
+    const when = wait >= 86400 ? `in about ${Math.round(wait / 86400)} day${wait >= 172800 ? 's' : ''} (${new Date(Date.now() + wait * 1000).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })})` : wait >= 3600 ? `in about ${Math.round(wait / 3600)} hour${wait >= 7200 ? 's' : ''}` : wait >= 60 ? `in about ${Math.ceil(wait / 60)} minute${wait >= 120 ? 's' : ''}` : `in ${wait} seconds`;
+    const msg = low
+      ? `Figma allows a view-only seat about 20 board reads a month, and this account's are used up; Figma will allow the next one ${when}. Until then, export the frames from Figma (select them, Export, PNG) and drop them here; the review is the same. A Figma account with a Full or Dev seat on this plan gets 15 to 20 reads a minute and can connect instead.`
+      : `Figma is pausing this connection for a moment (it limits how often a file can be read). Try again ${when}.`;
+    const e = err('figma_rate_limit', msg, 429); e.retryAfter = wait; throw e;
+  }
   if (!r.ok) throw err('figma_error', `Figma answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.json();
 }

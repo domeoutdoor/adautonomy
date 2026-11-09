@@ -1140,6 +1140,7 @@ async function loadFigmaBoard(url, from){
     if (e.code==='figma_token_required'){ await promptDlg({ title:'Board reading is not switched on yet', body:'This workspace has no Figma connection yet, so the board cannot be opened from a link. John sets that up once on the site; nothing is needed from you. In the meantime, drop the exported frames (PNG or JPG) here and the review runs the same way.', ok:'OK' }); return; }
     if (e.code==='figma_scope'){ const again = await promptDlg({ title:'Figma did not grant file access', body:e.message||'', ok:'Connect Figma again' }); if (again){ ls('ada:pendingFigma', { url, from, at: Date.now() }); location.href='/api/figma/disconnect?return='+encodeURIComponent('/api/figma/auth?return='+encodeURIComponent('/#review')); } return; }
     if (e.code==='figma_denied' || e.code==='figma_not_found'){ await promptDlg({ title:'That board could not be opened', body:e.message||'The board is not visible to the connected account.', ok:'OK' }); return; }
+    if (e.code==='figma_rate_limit'){ await promptDlg({ title:'Figma is not allowing another read right now', body:e.message||'Figma limits how often a file can be read. Drop the exported frames instead.', ok:'OK' }); return; }
     toast(e.message||'Could not read that board'); return; }
   const pages=res.pages||[]; const all=pages.flatMap(p=>p.frames.map(f=>({ ...f, page:p.name, pageId:p.id })));
   if (!all.length){ toast(`${res.name||'That board'} has no frames I can read${res.scoped?' under "'+res.scoped+'"':''}.`); return; }
