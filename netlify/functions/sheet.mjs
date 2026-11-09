@@ -13,7 +13,7 @@ export default async (req) => {
   if (!url) return fail('bad_request', 'Paste a link first.');
   try {
     const g = url.match(/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
-    if (g) return json(await readGoogle(g[1], tab, url));
+    if (g) { const out = await readGoogle(g[1], tab, url); return out instanceof Response ? out : json(out); }
     const a = url.match(/airtable\.com\/(app[A-Za-z0-9]+)\/(tbl[A-Za-z0-9]+)(?:\/(viw[A-Za-z0-9]+))?/);
     if (a) return json(await readAirtable(a[1], a[2], a[3], req.headers.get('x-airtable-token') || env('AIRTABLE_TOKEN', '')));
     if (/airtable\.com\/(shr|app)/.test(url)) return fail('airtable_link', 'Open the table in Airtable and copy the address from the browser bar (it contains app…, tbl… and usually viw…). Share links cannot be read.');
@@ -21,21 +21,35 @@ export default async (req) => {
   } catch (e) { return fail(e.code || 'read_failed', e.message || String(e), e.status || 502); }
 };
 
+// The whole workbook is read, every tab. `tab`, when given, only marks which tab is this round's order; the client
+// still sees the other tabs (master UAIDs, dupes, earlier rounds) and merges them.
 async function readGoogle(id, tab, url) {
   const gid = (url.match(/[#&?]gid=(\d+)/) || [])[1] || null;
   const token = await googleToken('https://www.googleapis.com/auth/spreadsheets.readonly'); const apiKey = env('GOOGLE_API_KEY');
   if (token || apiKey) {
     const meta = await gapi(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=properties.title,sheets.properties`, { token, apiKey });
     const tabs = (meta.sheets || []).map(s => ({ title: s.properties.title, gid: String(s.properties.sheetId) }));
-    let pick = null;
-    if (tab) pick = tabs.find(t => t.title.toLowerCase() === tab.toLowerCase()) || tabs.find(t => t.title.toLowerCase().includes(tab.toLowerCase()));
-    if (tab && !pick) throw err('no_such_tab', `No tab named "${tab}". This workbook has: ${tabs.map(t => t.title).join(', ')}.`, 404);
-    if (!pick && gid) pick = tabs.find(t => t.gid === gid);
-    if (!pick) pick = tabs[0];
-    if (!pick) throw err('no_tabs', 'The workbook has no tabs.', 404);
-    const vals = await gapi(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values/${encodeURIComponent("'" + pick.title.replace(/'/g, "''") + "'")}?valueRenderOption=FORMATTED_VALUE`, { token, apiKey });
-    return { source: 'google', title: meta.properties?.title || '', tab: pick.title, tabs: tabs.map(t => t.title), rows: vals.values || [] };
+    if (!tabs.length) throw err('no_tabs', 'The workbook has no tabs.', 404);
+    let focus = null;
+    if (tab) focus = tabs.find(t => t.title.toLowerCase() === tab.toLowerCase()) || tabs.find(t => t.title.toLowerCase().includes(tab.toLowerCase()));
+    if (!focus && gid) focus = tabs.find(t => t.gid === gid);
+    const q = tabs.map(t => 'ranges=' + encodeURIComponent("'" + t.title.replace(/'/g, "''") + "'")).join('&');
+    const batch = await gapi(`https://sheets.googleapis.com/v4/spreadsheets/${id}/values:batchGet?${q}&valueRenderOption=FORMATTED_VALUE`, { token, apiKey });
+    const ranges = batch.valueRanges || [];
+    const sheets = tabs.map((t, i) => ({ title: t.title, rows: ranges[i]?.values || [] }));
+    const first = focus ? sheets.find(s => s.title === focus.title) : sheets[0];
+    return { source: 'google', title: meta.properties?.title || '', tab: focus ? focus.title : null, tabs: tabs.map(t => t.title), sheets, rows: first?.rows || [] };
   }
+  // No Google credentials on the site: a link-shared workbook can still be exported whole as .xlsx.
+  const x = await fetch(`https://docs.google.com/spreadsheets/d/${id}/export?format=xlsx`, { redirect: 'follow', headers: { 'user-agent': 'AdAutonomy/1.0' } });
+  const xct = x.headers.get('content-type') || '';
+  if (x.status === 401 || x.status === 403 || /text\/html/.test(xct)) throw err('private_sheet', 'This sheet is private. In Google Sheets choose Share, then "Anyone with the link" as Viewer, and try again. Or ask John to connect the workspace Google account so private sheets can be read.', 403);
+  if (x.ok && /spreadsheetml|octet-stream|zip/.test(xct)) {
+    const bytes = new Uint8Array(await x.arrayBuffer());
+    if (bytes.length > 5_500_000) throw err('too_large', 'That workbook is over 5 MB. Drop the tracker as a file instead.', 413);
+    return new Response(bytes, { status: 200, headers: { 'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'x-ada-source': 'google', 'x-ada-tab': encodeURIComponent(tab || ''), 'cache-control': 'no-store' } });
+  }
+  // Last resort: one tab as CSV.
   let csvUrl;
   if (tab) csvUrl = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(tab)}`;
   else if (gid) csvUrl = `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`;

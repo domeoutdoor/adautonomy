@@ -47,10 +47,13 @@ async function accountEmail(token) {
 async function figma(path, token) {
   const r = await fetch(API + path, { headers: { 'X-Figma-Token': token } });
   if (r.status === 403 || r.status === 401 || r.status === 404) {
+    let detail = ''; try { const t = await r.text(); detail = (JSON.parse(t).message || JSON.parse(t).err || '').toString(); } catch { detail = ''; }
     const who = await accountEmail(token);
     const whoTxt = who ? `the workspace's Figma account (${who})` : "the workspace's Figma account";
     if (r.status === 404 && !who) throw err('figma_not_found', 'Figma could not find that file. Check the link.', 404);
-    throw err('figma_denied', `This board is not open to ${whoTxt}. Ask whoever owns the board to share it with that address (view is enough), or to set the file's sharing to "Anyone with the link can view", then paste the link again. Or drop the exported frames instead.`, 403);
+    if (/scope/i.test(detail)) throw err('figma_scope', `The site's Figma key cannot read file contents (Figma said: ${detail}). Generate a new personal access token with "File content" set to read, and replace FIGMA_TOKEN.`, 403);
+    if (/plan|enterprise|organization|admin|REST API|disabled/i.test(detail)) throw err('figma_denied', `Figma refused the site's key for this file (Figma said: ${detail}). The owner's Figma organization may block API access for personal tokens; a Figma admin at the organization can allow it. Or drop the exported frames instead.`, 403);
+    throw err('figma_denied', `This board is not open to ${whoTxt}${detail ? ` (Figma said: ${detail})` : ''}. Ask whoever owns the board to share it with that address (view is enough), or to set the file's sharing to "Anyone with the link can view", then paste the link again. Or drop the exported frames instead.`, 403);
   }
   if (r.status === 429) throw err('figma_rate_limit', 'Figma is rate-limiting this token for a moment. Wait a minute and try again.', 429);
   if (!r.ok) throw err('figma_error', `Figma answered ${r.status}: ${(await r.text()).slice(0, 200)}`);

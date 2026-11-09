@@ -861,7 +861,7 @@ function runDataChecks(){
     if (it.bucket==='passed' && !it.asset && it.frame && reqFlags.length) push(it, `Order asks for ${reqFlags.join(', ')}; drop the export to check it visually.`, 'check');
   }
   // missing: ready-to-build rows with no frame or export
-  const missing=[]; for (const r of rows){ if (!isReady(r)) continue; if (seenU.has(r.uaid)) continue; missing.push({ key:'missing:'+r.uaid, name: r.fileName ? r.fileName.replace(/\.(png|jpe?g|psd|mp4)$/i,'') : `(no file name) ${r.uaid}`, uaid:r.uaid, row:r, bucket:'missing', issues:[{ text:`Ready to build in the tracker but not on this board${r.dims?` (${r.dims}${r.partner?', '+r.partner:''})`:''}.`, sev:'missing', src:'data' }], parsed:null, asset:null, frame:null, expect:null }); }
+  const missing=[]; for (const r of rows){ if (!isReady(r)) continue; if (seenU.has(r.uaid)) continue; missing.push({ key:'missing:'+r.uaid, name: r.fileName ? r.fileName.replace(/\.(png|jpe?g|psd|mp4)$/i,'') : `(no file name) ${r.uaid}`, uaid:r.uaid, row:r, bucket:'missing', issues:[{ text:`Ready to build in the tracker${r.tab?` (tab “${r.tab}”)`:''} but not on this board${r.dims?` (${r.dims}${r.partner?', '+r.partner:''})`:''}.`, sev:'missing', src:'data' }], parsed:null, asset:null, frame:null, expect:null }); }
   const list = [...items.values(), ...missing];
   S.round.findings = list; S.round.visionDone = false;
   return list;
@@ -1048,10 +1048,9 @@ async function importTracker(file){
   if (!tabs.length){ toast('No tab with a UAID header row was found'); return; }
   let camp = currentCampaign();
   if (!camp){ camp = await Store.save('campaigns', { id:uid(), name: tabs[0].name.replace(/\.csv$/i,''), client:'', job:'', prefix:'', figma:'', market:'', createdAt:Date.now(), sources:[] }); S.campaignId=camp.id; ls('ada:lastCampaign', camp.id); }
-  let tab = tabs[0];
-  if (tabs.length>1){ const key=[camp.job, camp.prefix, camp.name].filter(Boolean).map(norm); tab = tabs.find(t=>key.some(k=>k && norm(t.name).includes(k))) || tabs.slice().sort((a,b)=>b.rows.length-a.rows.length)[0]; S.pendingTabs = tabs; }
-  else S.pendingTabs = null;
-  await applyTab(camp, tab, file.name);
+  const merged = mergeTabs(tabs, '');
+  S.pendingTabs = tabs.length>1 ? tabs : null;
+  await applyTab(camp, merged, file.name);
 }
 async function applyTab(camp, tab, fileName, source){
   await Store.saveTracker(camp.id, tab.rows);
@@ -1061,6 +1060,12 @@ async function applyTab(camp, tab, fileName, source){
   if (!camp.prefix){ const fn = tab.rows.find(r=>r.fileName)?.fileName; if (fn) camp.prefix = fn.split('_')[0]; }
   await Store.save('campaigns', camp); if (S.round.assets.length||S.round.frames.length){ runDataChecks(); }
   toast(`Order loaded: ${tab.rows.length} ICP rows from ${tab.name}`); renderCampaignDetail(); renderReview();
+}
+// Turn whatever /api/sheet returned (a whole .xlsx, every tab's cells, or one tab's rows) into tabs with UAID rows.
+async function tabsFromSheetReply(res){
+  if (res.blob){ const f = new File([res.blob], 'tracker.xlsx', { type: res.contentType||'' }); return { tabs: await parseTrackerFile(f), title: '', tabNames: null }; }
+  if (Array.isArray(res.sheets)){ const tabs=[]; for (const s of res.sheets){ const t = tableToRows(s.rows||[]); if (t && t.rows.length) tabs.push({ name:s.title, ...t }); } return { tabs, title: res.title||'', tabNames: res.tabs||null }; }
+  const t = tableToRows(res.rows||[]); return { tabs: t && t.rows.length ? [{ name: res.tab||'', ...t }] : [], title: res.title||'', tabNames: res.tabs||null };
 }
 wireDrop('#ov-drop','#ov-file', fs=>intake(fs,'overview'));
 wireDrop('#rv-drop','#rv-file', fs=>intake(fs,'review'));
@@ -1077,8 +1082,21 @@ async function apiPost(path, body, headers={}, retried){
   catch(e){ throw { code:'offline', message:'Could not reach the workspace. Check the connection and try again.' }; }
   const tag = j => { if (j && j.error && !j.code) j.code=j.error; return j; };
   if (r.status===401){ let j=null; try { j=await r.clone().json(); } catch(e){} if (j?.error) throw tag(j); if (!retried && await askAccessCode()) return apiPost(path, body, headers, true); throw { code:'not_granted', message:'This browser is not connected to the workspace yet. Open AdAutonomy from the link John sent you.' }; }
+  const ct = r.headers.get('content-type')||'';
+  if (r.ok && !/json/.test(ct)){ const blob = await r.blob(); return { blob, contentType: ct, tab: decodeURIComponent(r.headers.get('x-ada-tab')||''), source: r.headers.get('x-ada-source')||'' }; }
   let j; try { j = await r.json(); } catch(e){ throw { code:'bad_reply', message:`The workspace answered ${r.status} without details.` }; }
   if (!r.ok) throw tag(j); return j;
+}
+// Every tab with a UAID header is read; rows carry the tab they came from. A named tab goes first, so on a
+// duplicate UAID the current round's row wins over master lists and earlier rounds.
+function mergeTabs(tabs, focusName){
+  const f = focusName ? norm(focusName) : '';
+  const ordered = tabs.slice().sort((a,b)=>{ const fa = f && norm(a.name)===f ? 0 : f && norm(a.name).includes(f) ? 1 : 2; const fb = f && norm(b.name)===f ? 0 : f && norm(b.name).includes(f) ? 1 : 2; return fa-fb; });
+  const seen = new Set(); const rows = []; const used = [];
+  for (const t of ordered){ let n=0; for (const r of t.rows){ if (seen.has(r.uaid)) continue; seen.add(r.uaid); rows.push({ ...r, tab: t.name }); n++; } if (n) used.push(t.name); }
+  const focus = ordered.length && f && (norm(ordered[0].name)===f || norm(ordered[0].name).includes(f)) ? ordered[0].name : null;
+  const name = used.length===1 ? used[0] : focus ? `${focus} + ${used.length-1} other tab${used.length===2?'':'s'}` : `${used.length} tabs`;
+  return { name, rows, tabNames: used, focus };
 }
 function detectLink(url){ if (/docs\.google\.com\/spreadsheets/.test(url)) return 'sheet'; if (/airtable\.com\//.test(url)) return 'airtable'; if (/drive\.google\.com\//.test(url)) return 'drive'; if (/figma\.com\/(design|file|board|proto)/.test(url)) return 'figma'; return null; }
 function splitLinks(text){ const urls=(String(text||'').match(/https?:\/\/[^\s,;"'<>()\]\[]+/g)||[]).map(u=>u.replace(/[.,;:!?)]+$/,'')); let rest=String(text||''); for (const u of urls) rest=rest.replace(u,' '); rest=rest.replace(/\b(go to|look at|read|use|open|check|then|and|the|this|that|in|on|from|please|tab|sheet|board|link|links|figma|google|sheets|document|workbook|against|compare|review|what was made|is|a|an|to|my|our|at|with|for|it)\b/gi,' ').replace(/[^\w\s&().-]/g,' ').replace(/\s+/g,' ').trim(); return { urls:[...new Set(urls)], tabHint: rest.length>0 && rest.length<=40 ? rest : '' }; }
@@ -1147,13 +1165,14 @@ async function loadOrderLink(url, tab, from, airtableToken){
   catch(e){ if (e.code==='airtable_token_required' || e.code==='airtable_denied'){ const t=await promptDlg({ title:'Airtable token', body:'Reading an Airtable table needs a personal access token with data.records:read on that base. It is kept in this browser only.', input:'secret', label:'Token', placeholder:'pat…' }); if (t){ ls('ada:airtable', t); return loadOrderLink(url, tab, from, t); } return; }
     if (e.code==='no_such_tab' && /This workbook has: /.test(e.message||'')){ const tabs=e.message.split('This workbook has: ')[1].replace(/\.$/,'').split(', '); const pick=await promptDlg({ title:'Which tab?', body:`No tab matched "${tab}".`, options:tabs, label:'Tab' }); if (pick) return loadOrderLink(url, pick, from); return; }
     toast(e.message||'Could not read that link'); return; }
-  const t = tableToRows(res.rows||[]);
-  if (!t){ if (res.tabs && res.tabs.length>1){ const pick=await promptDlg({ title:'Which tab holds the order?', body:`"${res.tab}" has no UAID header. Pick the tab with the order rows.`, options:res.tabs.filter(x=>x!==res.tab), label:'Tab' }); if (pick) return loadOrderLink(url, pick, from); return; } toast(`"${res.tab}" has no row with a UAID header. Try the tab name in the Tab field.`); return; }
-  if (!t.rows.length){ toast(`"${res.tab}" has a UAID header but no ICP rows.`); return; }
-  const camp=await ensureCampaign(res.title || res.tab);
-  const label = res.source==='airtable' ? `Airtable ${res.title}${res.tab?' · '+res.tab:''}` : `${res.title||'Google Sheet'} · ${res.tab}`;
-  await applyTab(camp, { name: res.tab, rows: t.rows }, res.title||label, { label, url, tab: res.tab, via: res.source });
-  S.pendingTabs = res.tabs ? res.tabs.map(n=>({ name:n, rows: n===res.tab ? t.rows : null, url })) : null;
+  let parsed; try { parsed = await tabsFromSheetReply(res); } catch(e){ toast(e.message||'Could not read that workbook'); return; }
+  if (!parsed.tabs.length){ toast(parsed.tabNames && parsed.tabNames.length ? `None of the ${parsed.tabNames.length} tabs has a row with a UAID header and ICP rows.` : 'No tab with a UAID header row and ICP rows was found.'); return; }
+  const merged = mergeTabs(parsed.tabs, tab || res.tab || '');
+  const title = parsed.title || res.title || (res.source==='airtable' ? 'Airtable' : 'Google Sheet');
+  const camp=await ensureCampaign(title);
+  const label = res.source==='airtable' ? `Airtable ${title}${res.tab?' · '+res.tab:''}` : `${title} · ${merged.name}`;
+  await applyTab(camp, merged, title, { label, url, tab: merged.focus || null, tabs: merged.tabNames, via: res.source||'google' });
+  S.pendingTabs = parsed.tabs.length>1 ? parsed.tabs : null;
   if (S.round.assets.length||S.round.frames.length){ runDataChecks(); renderFindings(); }
   if (from==='overview') go('review'); else renderReview();
 }
@@ -1270,10 +1289,10 @@ function renderCampaignDetail(){
   if (!rows.length){ el.innerHTML=``; return; }
   const ready=rows.filter(isReady).length, canc=rows.filter(r=>/cancel/i.test(r.studioStatus||'')).length;
   const byPartner=new Map(); for (const r of rows){ const k=r.partner||r.subChannel||r.channel||'Other'; byPartner.set(k,(byPartner.get(k)||0)+1); }
-  const tabsel = S.pendingTabs && S.pendingTabs.length>1 ? `<label class="f" style="max-width:360px;margin-bottom:10px">Workbook tab in use<select class="input" id="cd-tabsel">${S.pendingTabs.map(t=>`<option ${c.trackerName?.endsWith(t.name)?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>` : '';
+  const tabsel = S.pendingTabs && S.pendingTabs.length>1 ? `<label class="f" style="max-width:360px;margin-bottom:10px">This round's tab (every tab is read; this one wins on a duplicate UAID)<select class="input" id="cd-tabsel"><option value="">Workbook order</option>${S.pendingTabs.map(t=>`<option ${(c.trackerName||'').includes(t.name)?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>` : '';
   el.innerHTML = `${tabsel}<div class="stat"><span class="pill accent">${rows.length} ICP rows</span><span class="pill ok">${ready} ready to build</span>${canc?`<span class="pill">${canc} cancelled</span>`:''}<span class="pill">${esc(c.trackerName||'')}${c.trackerAt?' · '+fmtDate(c.trackerAt):''}</span></div>
     <div class="small muted" style="margin-bottom:8px">Placements in this order:</div><div class="chips" style="margin-top:0">${[...byPartner.entries()].sort((a,b)=>b[1]-a[1]).slice(0,30).map(([k,n])=>`<span class="chip"><span>${esc(k)}</span><b class="num">${n}</b></span>`).join('')}</div>`;
-  const ts=$('#cd-tabsel'); if (ts) ts.onchange=()=>{ const t=S.pendingTabs.find(x=>x.name===ts.value); if (!t) return; if (t.rows) applyTab(c, t, (c.trackerName||'').split(' · ')[0]); else loadOrderLink(t.url, t.name, 'campaign'); };
+  const ts=$('#cd-tabsel'); if (ts) ts.onchange=()=>{ const merged = mergeTabs(S.pendingTabs, ts.value); applyTab(c, merged, (c.trackerName||'').split(' · ')[0]); };
 }
 $('#cd-save').addEventListener('click', async ()=>{ const c=currentCampaign(); if (!c) return; Object.assign(c, { name:$('#cd-name').value.trim()||c.name, client:$('#cd-client').value.trim(), job:$('#cd-job').value.trim(), prefix:$('#cd-prefix').value.trim(), figma:$('#cd-figma').value.trim(), market:$('#cd-market').value.trim() }); await Store.save('campaigns', c); $('#cd-saved').textContent='Saved'; setTimeout(()=>$('#cd-saved').textContent='',1500); });
 $('#cd-delete').addEventListener('click', async ()=>{ const c=currentCampaign(); if (!c) return; if (await confirmDlg('Delete this campaign?', `${c.name} and its order rows will be removed. Saved reports stay.`)) { delete S.trackers[c.id]; await Store.remove('campaigns', c.id); S.campaignId=null; $('#camp-detail').hidden=true; renderAll(); } });
