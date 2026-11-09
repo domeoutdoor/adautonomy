@@ -164,7 +164,7 @@ async function figma(path, auth) {
     if (/plan|enterprise|organization|admin|REST API|disabled/i.test(detail)) throw err('figma_denied', `Figma refused access to this file (Figma said: ${detail}). The owner's Figma organization may block API access; a Figma admin at the organization can allow it. Or drop the exported frames instead.`, 403);
     throw err('figma_denied', `This board is not open to ${whoTxt}${detail ? ` (Figma said: ${detail})` : ''}. ${auth.oauth ? 'Open the board in Figma to confirm you can see it, or ask the owner to share it with you' : 'Ask whoever owns the board to share it with that address (view is enough), or to set the file\'s sharing to "Anyone with the link can view"'}, then paste the link again. Or drop the exported frames instead.`, 403);
   }
-  if (r.status === 429) throw err('figma_rate_limit', 'Figma is rate-limiting this connection for a moment. Wait a minute and try again.', 429);
+  if (r.status === 429) { const wait = Number(r.headers.get('retry-after')) || 60; const e = err('figma_rate_limit', `Figma is pausing this connection for a moment (it limits how often a file can be read). Try again in about ${wait >= 60 ? Math.ceil(wait / 60) + ' minute' + (wait >= 120 ? 's' : '') : wait + ' seconds'}.`, 429); e.retryAfter = wait; throw e; }
   if (!r.ok) throw err('figma_error', `Figma answered ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.json();
 }
@@ -191,7 +191,7 @@ async function collect(fileKey, nodes, auth) {
     }
     for (let i = 0; i < toFetch.length; i += 40) {
       const batch = toFetch.slice(i, i + 40);
-      const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(batch.map(b => b.n.id).join(','))}&depth=1`, auth);
+      const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(batch.map(b => b.n.id).join(','))}&depth=2`, auth);
       for (const b of batch) b.children = r.nodes?.[b.n.id]?.document?.children || [];
     }
     for (const item of pending) {
@@ -206,9 +206,11 @@ async function collect(fileKey, nodes, auth) {
   return frames;
 }
 
+// Figma rate-limits file reads tightly, so each read grabs three levels at once: one call per linked page, and for a
+// whole file one call for the page list plus one per four pages. Deeper nests fall back to small follow-up calls.
 async function list(fileKey, nodeId, auth) {
   if (nodeId) {
-    const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=2`, auth);
+    const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(nodeId)}&depth=3`, auth);
     const doc = r.nodes?.[nodeId]?.document;
     if (!doc) throw err('figma_not_found', 'That node is not in the file any more.', 404);
     let frames;
@@ -217,11 +219,13 @@ async function list(fileKey, nodeId, auth) {
     else frames = [];
     return { fileKey, name: r.name || '', lastModified: r.lastModified || null, scoped: doc.name, pages: [{ id: doc.id, name: doc.type === 'CANVAS' ? doc.name : `${doc.name} (${doc.type.toLowerCase()})`, frames }] };
   }
-  const f = await figma(`/files/${fileKey}?depth=2`, auth);
+  const f = await figma(`/files/${fileKey}?depth=1`, auth);
+  const pageNodes = (f.document?.children || []).filter(p => p.type === 'CANVAS');
   const pages = [];
-  for (const page of f.document?.children || []) {
-    if (page.type !== 'CANVAS') continue;
-    pages.push({ id: page.id, name: page.name, frames: await collect(fileKey, page.children || [], auth) });
+  for (let i = 0; i < pageNodes.length; i += 4) {
+    const batch = pageNodes.slice(i, i + 4);
+    const r = await figma(`/files/${fileKey}/nodes?ids=${encodeURIComponent(batch.map(p => p.id).join(','))}&depth=3`, auth);
+    for (const p of batch) { const doc = r.nodes?.[p.id]?.document; pages.push({ id: p.id, name: p.name, frames: await collect(fileKey, doc?.children || [], auth) }); }
   }
   return { fileKey, name: f.name || '', lastModified: f.lastModified || null, scoped: null, pages };
 }
