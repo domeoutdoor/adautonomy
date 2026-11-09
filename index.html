@@ -518,7 +518,7 @@ dialog .ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;justi
         </div></div>
         <div class="card"><div class="hd"><h2>What this beta can and cannot do yet</h2></div><div class="bd beta-notes">
           <b>Works now</b><ul><li>Takes the order from Excel, CSV, a Google Sheets link (with a tab name) or an Airtable table link, and frames from exports or a Google Drive folder link. One box, any source.</li><li>Reads exports and the tracker from the files alone; no board access needed.</li><li>Data checks, the four-section studio list, saved reports, editable rules, workflow mapping.</li></ul>
-          <b>Needs the workspace connections</b><ul><li>Visual checks and the reviewer panel. They work from the link John sent you; there is nothing to enter.</li><li>Private Google Sheets and Drive folders need the workspace Google account; link-shared ones work without it.</li></ul><b>Recent changes</b><ul id="beta-log"></ul>
+          <b>Needs the workspace connections</b><ul><li>Visual checks and the reviewer panel. They work from the link John sent you; there is nothing to enter.</li><li>Board links use your own Figma login. The first time, Figma asks whether AdAutonomy may view your files; click Allow. <a href="/api/figma/disconnect?return=%2F%23overview">Disconnect Figma</a> forgets it in this browser.</li><li>Private Google Sheets and Drive folders need the workspace Google account; link-shared ones work without it.</li></ul><b>Recent changes</b><ul id="beta-log"></ul>
           <b>Known limits</b><ul><li>Campaigns, rules and reports live in this browser until the team store is switched on.</li><li>Video assets are checked by name and spec only.</li></ul>
         </div></div>
       </div>
@@ -1085,7 +1085,7 @@ wireDrop('#cd-drop','#cd-file', fs=>intake(fs,'campaign'));
 function promptDlg({ title, body, options, label, input, placeholder, ok='Continue' }){
   return new Promise(res=>{ const d=$('#dlg-prompt'); $('#dp-title').textContent=title; $('#dp-body').textContent=body||''; const sw=$('#dp-selwrap'), iw=$('#dp-inwrap');
     sw.hidden=!options; iw.hidden=!input; if (options){ $('#dp-sellabel').textContent=label||'Choose'; $('#dp-select').innerHTML=options.map(o=>`<option>${esc(o)}</option>`).join(''); } if (input){ $('#dp-inlabel').textContent=label||'Value'; $('#dp-input').value=''; $('#dp-input').placeholder=placeholder||''; $('#dp-input').type = input==='secret'?'password':'text'; }
-    $('#dp-ok').textContent=ok; const done=v=>{ d.close(); res(v); }; $('#dp-ok').onclick=()=>done(options? $('#dp-select').value : ($('#dp-input').value.trim()||null)); $('#dp-cancel').onclick=()=>done(null); d.onclose=()=>res(null); d.showModal(); });
+    $('#dp-ok').textContent=ok; const done=v=>{ d.close(); res(v); }; $('#dp-ok').onclick=()=>done(options? $('#dp-select').value : input ? ($('#dp-input').value.trim()||null) : true); $('#dp-cancel').onclick=()=>done(null); d.onclose=()=>res(null); d.showModal(); });
 }
 async function apiPost(path, body, headers={}, retried){
   let r; try { r = await fetch(path, { method:'POST', headers:{ 'content-type':'application/json', 'x-access-code': RV.code, ...headers }, body: JSON.stringify(body) }); }
@@ -1133,8 +1133,13 @@ async function loadFigmaBoard(url, from){
   const headers={}; const savedTok=ls('ada:figma'); if (savedTok) headers['x-figma-token']=savedTok;
   let res; try { res = await apiPost('/api/figma', { url, action:'list' }, headers); }
   catch(e){
+    if (e.code==='figma_connect_required'){
+      const go = await promptDlg({ title:'Connect your Figma', body:'One click. Figma will ask whether AdAutonomy may view your files; click Allow. It only looks at boards you can already see, and only this browser is connected. You come straight back here and the board opens.', ok:'Connect Figma' });
+      if (go){ ls('ada:pendingFigma', { url, from, at: Date.now() }); location.href = '/api/figma/auth?return=' + encodeURIComponent(location.origin + location.pathname + '#review'); }
+      return; }
     if (e.code==='figma_token_required'){ await promptDlg({ title:'Board reading is not switched on yet', body:'This workspace has no Figma connection yet, so the board cannot be opened from a link. John sets that up once on the site; nothing is needed from you. In the meantime, drop the exported frames (PNG or JPG) here and the review runs the same way.', ok:'OK' }); return; }
-    if (e.code==='figma_denied' || e.code==='figma_not_found'){ await promptDlg({ title:'The board is not open to the workspace', body:e.message||'The workspace cannot see this board.', ok:'OK' }); return; }
+    if (e.code==='figma_scope'){ const again = await promptDlg({ title:'Figma did not grant file access', body:e.message||'', ok:'Connect Figma again' }); if (again){ ls('ada:pendingFigma', { url, from, at: Date.now() }); location.href='/api/figma/disconnect?return='+encodeURIComponent('/api/figma/auth?return='+encodeURIComponent('/#review')); } return; }
+    if (e.code==='figma_denied' || e.code==='figma_not_found'){ await promptDlg({ title:'That board could not be opened', body:e.message||'The board is not visible to the connected account.', ok:'OK' }); return; }
     toast(e.message||'Could not read that board'); return; }
   const pages=res.pages||[]; const all=pages.flatMap(p=>p.frames.map(f=>({ ...f, page:p.name, pageId:p.id })));
   if (!all.length){ toast(`${res.name||'That board'} has no frames I can read${res.scoped?' under "'+res.scoped+'"':''}.`); return; }
@@ -1476,7 +1481,7 @@ async function fbSend(){
   catch(e){ st.textContent='Could not send from here. Copy your note and send it by email.'; }
   finally { $('#fb-send').disabled=false; }
 }
-const BETA_LOG=[ ['Nov 8','No codes, no tokens. The link you were sent carries the workspace connection; this browser keeps it. Boards are read with the workspace’s own Figma connection.'], ['Nov 8','Paste the Figma board link and the Google Sheets link together (in the intake box or in the conversation) and the frames are read straight off the board, rendered as they are right now, and checked against the sheet. The workspace reads the board with its own Figma connection; nothing to set up on your side. Asked for by JoAnna.'], ['Nov 8','Order from a Google Sheets link with a tab name, or an Airtable table link. Frames from a Google Drive folder link. One intake box for everything. Asked for by JoAnna.'], ['Nov 8','Campaign page shows every source feeding a round, with Refresh, and a plain summary of what is going on.'] ];
+const BETA_LOG=[ ['Nov 9','Board links open with your own Figma login. The first time, Figma asks whether AdAutonomy may view your files; click Allow and you are back here with the board open. Nothing to generate or paste.'], ['Nov 9','The whole tracker is read, every tab, in one go. Name a tab (“Mistletoe”) to make it this round’s order; the other tabs still feed UAID matches and dupes.'], ['Nov 8','No codes, no tokens. The link you were sent carries the workspace connection; this browser keeps it.'], ['Nov 8','Paste the Figma board link and the Google Sheets link together (in the intake box or in the conversation) and the frames are read straight off the board, rendered as they are right now, and checked against the sheet. The workspace reads the board with its own Figma connection; nothing to set up on your side. Asked for by JoAnna.'], ['Nov 8','Order from a Google Sheets link with a tab name, or an Airtable table link. Frames from a Google Drive folder link. One intake box for everything. Asked for by JoAnna.'], ['Nov 8','Campaign page shows every source feeding a round, with Refresh, and a plain summary of what is going on.'] ];
 if (!window.claude){ const b=$('#beta'); b.hidden=false; const lg=$('#beta-log'); if (lg) lg.innerHTML=BETA_LOG.map(([d,t])=>`<li><b>${esc(d)}</b> · ${esc(t)}</li>`).join(''); b.addEventListener('toggle', ()=>{ if (b.open) fbOpen(); else if (FB.listening) fbToggle(); }); $('#fb-mic').addEventListener('click', fbToggle); $('#fb-send').addEventListener('click', fbSend); }
 
 /* ===================== Boot ===================== */
@@ -1488,6 +1493,14 @@ if (!window.claude){ const b=$('#beta'); b.hidden=false; const lg=$('#beta-log')
   await Store.init();
   if (S.campaignId) await Store.loadTracker(S.campaignId);
   renderAll();
+  // Back from Figma's permission page: pick the board up where she left it.
+  try {
+    const q = new URLSearchParams(location.search); const ferr = q.get('figma_error');
+    if (ferr){ history.replaceState(null,'',location.pathname+location.hash); toast(ferr); ls('ada:pendingFigma', null); }
+    const pend = ls('ada:pendingFigma');
+    if (pend && pend.url && Date.now()-(pend.at||0) < 20*60*1000){ ls('ada:pendingFigma', null); if (!ferr){ go('review'); await loadFigmaBoard(pend.url, pend.from||'review'); } }
+    else if (pend) ls('ada:pendingFigma', null);
+  } catch(e){}
 })();
 </script>
 </body>
