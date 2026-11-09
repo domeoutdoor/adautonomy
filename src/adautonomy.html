@@ -755,8 +755,8 @@ function parseName(name){
   const parts = base.split('_').filter(Boolean);
   let uaidIdx = -1; for (let i=parts.length-1;i>=0;i--) if (UAID_RE.test(parts[i])) { uaidIdx=i; break; }
   const uaid = uaidIdx>=0 ? parts[uaidIdx] : null;
-  const sizeIdx = parts.findIndex(p=>/^\d+x\d+$/i.test(p) || /^\d+:\d+$/.test(p));
-  const size = sizeIdx>=0 ? parts[sizeIdx].toLowerCase() : null;
+  const sizeIdx = parts.findIndex(p=>/^\d+x\d+(px)?$/i.test(p) || /^\d+:\d+$/.test(p));
+  const size = sizeIdx>=0 ? parts[sizeIdx].toLowerCase().replace(/px$/,'') : null;
   const market = sizeIdx>=0 && parts[sizeIdx+1] && /^[A-Z]{2}$/.test(parts[sizeIdx+1]) ? parts[sizeIdx+1] : null;
   const lang = market && parts[sizeIdx+2] && /^[A-Z]{2}$/.test(parts[sizeIdx+2]) ? parts[sizeIdx+2] : null;
   const extraStart = sizeIdx>=0 ? sizeIdx + 1 + (market?1:0) + (lang?1:0) : 2;
@@ -860,8 +860,10 @@ function runDataChecks(){
     it.expect = { platform: rule?.name||p.platform, logo: rule?.logo||'unknown', tt: rule?.tt||'unknown', cta: ex, reqs: reqFlags, reqText: (row?.reqs||'').slice(0,400), talent, copy: row?.copy||'', concept: row?.concept||row?.conceptFree||'', status: rule?.status||'none' };
     if (it.bucket==='passed' && !it.asset && it.frame && reqFlags.length) push(it, `Order asks for ${reqFlags.join(', ')}; drop the export to check it visually.`, 'check');
   }
-  // missing: ready-to-build rows with no frame or export
-  const missing=[]; for (const r of rows){ if (!isReady(r)) continue; if (seenU.has(r.uaid)) continue; missing.push({ key:'missing:'+r.uaid, name: r.fileName ? r.fileName.replace(/\.(png|jpe?g|psd|mp4)$/i,'') : `(no file name) ${r.uaid}`, uaid:r.uaid, row:r, bucket:'missing', issues:[{ text:`Ready to build in the tracker${r.tab?` (tab “${r.tab}”)`:''} but not on this board${r.dims?` (${r.dims}${r.partner?', '+r.partner:''})`:''}.`, sev:'missing', src:'data' }], parsed:null, asset:null, frame:null, expect:null }); }
+  // missing: ready-to-build rows with no frame or export. With a whole workbook loaded, only this round's tab counts:
+  // the tab named on the way in, or else the tab the board's frames mostly belong to.
+  const focus = (()=>{ const c=currentCampaign(); if (c?.trackerFocus) return c.trackerFocus; const n=new Map(); for (const it of items.values()){ const t=it.row?.tab; if (t) n.set(t,(n.get(t)||0)+1); } return [...n.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0] || null; })();
+  const missing=[]; for (const r of rows){ if (!isReady(r)) continue; if (seenU.has(r.uaid)) continue; if (focus && r.tab && r.tab!==focus) continue; missing.push({ key:'missing:'+r.uaid, name: r.fileName ? r.fileName.replace(/\.(png|jpe?g|psd|mp4)$/i,'') : `(no file name) ${r.uaid}`, uaid:r.uaid, row:r, bucket:'missing', issues:[{ text:`Ready to build in the tracker${r.tab?` (tab “${r.tab}”)`:''} but not on this board${r.dims?` (${r.dims}${r.partner?', '+r.partner:''})`:''}.`, sev:'missing', src:'data' }], parsed:null, asset:null, frame:null, expect:null }); }
   const list = [...items.values(), ...missing];
   S.round.findings = list; S.round.visionDone = false;
   return list;
@@ -1056,7 +1058,7 @@ async function applyTab(camp, tab, fileName, source){
   await Store.saveTracker(camp.id, tab.rows);
   camp.sources = (camp.sources||[]).filter(x=>x.kind!=='order');
   camp.sources.push({ kind:'order', label: source?.label || `${fileName||'file'}${tab.name && tab.name!==fileName ? ' · '+tab.name : ''}`, url: source?.url||null, tab: source?.tab||tab.name||null, count: tab.rows.length, at: Date.now(), via: source?.via||'file' });
-  camp.trackerName = `${fileName||''}${tab.name && tab.name!==fileName ? ' · '+tab.name : ''}`; camp.trackerRows = tab.rows.length; camp.trackerReady = tab.rows.filter(isReady).length; camp.trackerAt = Date.now();
+  camp.trackerName = `${fileName||''}${tab.name && tab.name!==fileName ? ' · '+tab.name : ''}`; camp.trackerRows = tab.rows.length; camp.trackerFocus = tab.focus || null; camp.trackerTabs = tab.tabNames || null; camp.trackerReady = tab.rows.filter(r=>isReady(r) && (!tab.focus || !r.tab || r.tab===tab.focus)).length; camp.trackerAt = Date.now();
   if (!camp.prefix){ const fn = tab.rows.find(r=>r.fileName)?.fileName; if (fn) camp.prefix = fn.split('_')[0]; }
   await Store.save('campaigns', camp); if (S.round.assets.length||S.round.frames.length){ runDataChecks(); }
   toast(`Order loaded: ${tab.rows.length} ICP rows from ${tab.name}`); renderCampaignDetail(); renderReview();
@@ -1169,7 +1171,14 @@ async function loadOrderLink(url, tab, from, airtableToken){
   if (!parsed.tabs.length){ toast(parsed.tabNames && parsed.tabNames.length ? `None of the ${parsed.tabNames.length} tabs has a row with a UAID header and ICP rows.` : 'No tab with a UAID header row and ICP rows was found.'); return; }
   const merged = mergeTabs(parsed.tabs, tab || res.tab || '');
   const title = parsed.title || res.title || (res.source==='airtable' ? 'Airtable' : 'Google Sheet');
-  const camp=await ensureCampaign(title);
+  // A round named on the way in gets its own campaign, named after that tab, unless the current one already is it.
+  const wantName = merged.focus || (parsed.tabs.length===1 ? parsed.tabs[0].name : '') || title;
+  let camp = currentCampaign();
+  if (!camp || /\(sample\)/i.test(camp.name||'') || (merged.focus && camp.name && norm(camp.name)!==norm(merged.focus) && !norm(merged.focus).includes(norm(camp.name)))){
+    const existing = S.campaigns.find(c=>norm(c.name)===norm(wantName));
+    if (existing){ camp = existing; S.campaignId = camp.id; ls('ada:lastCampaign', camp.id); }
+    else { camp = await Store.save('campaigns', { id:uid(), name: wantName, client:'', job:(wantName.match(/^\d{6}/)||[''])[0], prefix:'', figma:'', market:'', createdAt:Date.now(), sources:[] }); S.campaignId = camp.id; ls('ada:lastCampaign', camp.id); }
+  }
   const label = res.source==='airtable' ? `Airtable ${title}${res.tab?' · '+res.tab:''}` : `${title} · ${merged.name}`;
   await applyTab(camp, merged, title, { label, url, tab: merged.focus || null, tabs: merged.tabNames, via: res.source||'google' });
   S.pendingTabs = parsed.tabs.length>1 ? parsed.tabs : null;
