@@ -1,5 +1,13 @@
 // Shared helpers for the AdAutonomy endpoints.
-export const env = (k, d) => (globalThis.Netlify?.env?.get?.(k) ?? process.env[k] ?? d);
+// Variable names are matched without regard to case, so FIGMA_TOKEN and Figma_Token are the same setting.
+export const env = (k, d) => {
+  const direct = globalThis.Netlify?.env?.get?.(k) ?? process.env[k];
+  if (direct !== undefined && direct !== '') return direct;
+  const want = k.toUpperCase();
+  const all = (() => { try { const o = globalThis.Netlify?.env?.toObject?.(); if (o) return o; } catch (e) {} return process.env; })();
+  for (const [name, value] of Object.entries(all || {})) if (name.toUpperCase() === want && value !== '') return value;
+  return d;
+};
 export const json = (o, status = 200) => Response.json(o, { status });
 export const fail = (code, message, status = 400) => json({ error: code, message }, status);
 export const err = (code, message, status = 502) => Object.assign(new Error(message), { code, status });
