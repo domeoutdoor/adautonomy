@@ -1,0 +1,1466 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="AdAutonomy: creative QC that reads the order, the board and the brand rules.">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>AdAutonomy</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@600;700;800&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: a graphite rail on the left, a cool-grey working surface; the Review view is a three-pane workbench
+   (inputs | findings | reviewer) that stacks to one column on phones. Type: Plex Sans for the UI, Manrope for
+   the wordmark and counts, Plex Mono for file names and UAIDs. */
+:root{
+  --bg:#F2F4F8; --surface:#FFFFFF; --surface-2:#F7F8FB; --line:#DCE1E9; --line-strong:#C3CBD7;
+  --ink:#121826; --ink-2:#4A5568; --ink-3:#7B869A;
+  --rail:#0F1526; --rail-ink:#E8ECF4; --rail-muted:#8E98AE; --rail-line:#1F2842; --rail-active:#1A2340;
+  --accent:#2457E6; --accent-ink:#FFFFFF; --accent-soft:#E8EEFF; --accent-deep:#1B45C2;
+  --crit:#C2362C; --crit-soft:#FBE9E7; --warn:#A86200; --warn-soft:#FFF2DC; --ok:#1E8449; --ok-soft:#E3F4E9; --neutral:#5B6B86; --neutral-soft:#EEF1F6;
+  --font-ui:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --font-display:'Manrope','IBM Plex Sans',system-ui,sans-serif;
+  --font-mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --r:10px; --r-sm:6px; --shadow:0 1px 2px rgba(18,24,38,.06),0 6px 20px -12px rgba(18,24,38,.18);
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#0B0F18; --surface:#111827; --surface-2:#151D2D; --line:#242E42; --line-strong:#32405A;
+  --ink:#E7EBF3; --ink-2:#AEB8CA; --ink-3:#76829A;
+  --rail:#080C15; --rail-ink:#E8ECF4; --rail-muted:#8E98AE; --rail-line:#182036; --rail-active:#151D33;
+  --accent:#6B8EFF; --accent-ink:#0B0F18; --accent-soft:#182449; --accent-deep:#8AA6FF;
+  --crit:#F0766C; --crit-soft:#3A1A17; --warn:#F2B04A; --warn-soft:#3A2A10; --ok:#4FC27D; --ok-soft:#12301E; --neutral:#9AA8C0; --neutral-soft:#1A2234;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6); color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#0B0F18; --surface:#111827; --surface-2:#151D2D; --line:#242E42; --line-strong:#32405A;
+  --ink:#E7EBF3; --ink-2:#AEB8CA; --ink-3:#76829A;
+  --rail:#080C15; --rail-ink:#E8ECF4; --rail-muted:#8E98AE; --rail-line:#182036; --rail-active:#151D33;
+  --accent:#6B8EFF; --accent-ink:#0B0F18; --accent-soft:#182449; --accent-deep:#8AA6FF;
+  --crit:#F0766C; --crit-soft:#3A1A17; --warn:#F2B04A; --warn-soft:#3A2A10; --ok:#4FC27D; --ok-soft:#12301E; --neutral:#9AA8C0; --neutral-soft:#1A2234;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -12px rgba(0,0,0,.6); color-scheme:dark }
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--font-ui);-webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--rail)}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--font-mono);font-size:12.5px}
+.num{font-variant-numeric:tabular-nums}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+/* Shell */
+.app{display:flex;min-height:100%}
+.rail{width:232px;flex:0 0 232px;background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;position:sticky;top:0;height:100vh;height:100dvh;padding-left:max(0px,env(safe-area-inset-left,0px))}
+.brand{display:flex;align-items:center;gap:10px;padding:18px 18px 14px;border-bottom:1px solid var(--rail-line)}
+.brand .mark{width:30px;height:30px;flex:0 0 30px}
+.brand .word{font-family:var(--font-display);font-weight:800;font-size:17px;letter-spacing:-.01em}
+.brand .word span{color:var(--accent);filter:brightness(1.35)}
+.nav{display:flex;flex-direction:column;gap:2px;padding:12px 10px}
+.nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--rail-muted);padding:9px 10px;border-radius:8px;font-weight:500}
+.nav button svg{width:17px;height:17px;flex:0 0 17px;opacity:.8}
+.nav button:hover{background:var(--rail-active);color:var(--rail-ink)}
+.nav button.active{background:var(--rail-active);color:var(--rail-ink);box-shadow:inset 3px 0 0 var(--accent)}
+.nav .badge{margin-left:auto;background:var(--rail-line);color:var(--rail-ink);border-radius:999px;padding:0 7px;font-size:11px;font-weight:600}
+.rail-foot{margin-top:auto;padding:14px 16px 18px;border-top:1px solid var(--rail-line);font-size:12px;color:var(--rail-muted)}
+.rail-foot .ws{color:var(--rail-ink);font-weight:600}
+.rail-foot .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px;vertical-align:middle}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px max(16px,env(safe-area-inset-right,0px)) 14px 24px;border-bottom:1px solid var(--line);background:var(--surface);position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+.topbar h1{font-family:var(--font-display);font-weight:700;font-size:18px;margin:0;letter-spacing:-.01em}
+.topbar .sub{color:var(--ink-3);font-size:12.5px}
+.topbar .grow{flex:1}
+.view{display:none;padding:22px 24px 48px;padding-right:max(24px,env(safe-area-inset-right,0px))}
+.view.active{display:block}
+
+/* Controls */
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);padding:7px 12px;border-radius:8px;font-weight:500;line-height:1.2}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{background:var(--accent-deep);border-color:var(--accent-deep)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--ink-2)}
+.btn.ghost:hover{background:var(--neutral-soft)}
+.btn.sm{padding:4px 9px;font-size:12.5px;border-radius:6px}
+.btn.danger{color:var(--crit);border-color:var(--crit)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.btn svg{width:15px;height:15px}
+select.input,input.input,textarea.input{width:100%;background:var(--surface);border:1px solid var(--line-strong);border-radius:8px;padding:8px 10px;min-width:0}
+textarea.input{resize:vertical;min-height:72px}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--ink-2);font-weight:500;min-width:0}
+.row{display:flex;gap:12px;flex-wrap:wrap}
+.row>*{flex:1 1 180px;min-width:0}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;background:var(--neutral-soft);color:var(--neutral);white-space:nowrap}
+.pill.crit{background:var(--crit-soft);color:var(--crit)} .pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.accent{background:var(--accent-soft);color:var(--accent)}
+.pill .d{width:7px;height:7px;border-radius:50%;background:currentColor}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow)}
+.card .hd{display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card .hd h2{margin:0;font-size:14px;font-weight:600}
+.card .hd .grow{flex:1}
+.card .bd{padding:14px 16px}
+.eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.muted{color:var(--ink-3)} .small{font-size:12.5px}
+h2.sec{font-family:var(--font-display);font-size:16px;margin:0 0 10px;text-wrap:balance}
+.empty{border:1px dashed var(--line-strong);border-radius:var(--r);padding:22px;text-align:center;color:var(--ink-3)}
+.toast{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 14px;border-radius:8px;font-weight:500;box-shadow:var(--shadow);z-index:50;max-width:calc(100vw - 32px)}
+.kbd{font-family:var(--font-mono);font-size:11.5px;background:var(--neutral-soft);border-radius:4px;padding:1px 5px}
+
+/* Overview */
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.tile .v{font-family:var(--font-display);font-weight:800;font-size:28px;letter-spacing:-.02em;line-height:1.1;margin-top:4px}
+.tile .v.crit{color:var(--crit)} .tile .v.warn{color:var(--warn)} .tile .v.ok{color:var(--ok)}
+.two{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px}
+@media (max-width:980px){.two{grid-template-columns:1fr}}
+.list{list-style:none;margin:0;padding:0}
+.list li{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:1px solid var(--line);flex-wrap:wrap}
+.list li:first-child{border-top:0}
+.list .t{font-weight:600} .list .m{color:var(--ink-3);font-size:12.5px}
+.list .grow{flex:1;min-width:0}
+.pipe{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.pipe .st{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12.5px}
+.pipe .st b{display:block;font-size:13px}
+@media (max-width:700px){.pipe{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Drop zone */
+.drop{border:1.5px dashed var(--line-strong);border-radius:var(--r);padding:18px;text-align:center;background:var(--surface-2);transition:border-color .15s,background .15s;cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop b{display:block;font-weight:600}
+.drop .muted{font-size:12.5px}
+.drop input{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px 8px 3px 10px;font-size:12px;max-width:100%}
+.chip .x{border:0;background:none;color:var(--ink-3);padding:0 2px;line-height:1}
+.chip .x:hover{color:var(--crit)}
+.chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+/* Review workbench */
+.bench{display:grid;grid-template-columns:300px minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:1240px){.bench{grid-template-columns:280px minmax(0,1fr)} .bench .pane-chat{grid-column:1/-1}}
+@media (max-width:860px){.bench{grid-template-columns:1fr} .bench .pane-chat{grid-column:auto}}
+.pane{min-width:0}
+.pane h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:0 0 8px;font-weight:600}
+.stat{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.stat .pill{font-size:12px}
+.progress{height:6px;background:var(--neutral-soft);border-radius:999px;overflow:hidden;margin:8px 0}
+.progress i{display:block;height:100%;background:var(--accent);width:0;transition:width .3s}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:12px;overflow-x:auto}
+.tabs button{border:0;background:none;padding:8px 12px;color:var(--ink-2);font-weight:500;border-bottom:2px solid transparent;white-space:nowrap}
+.tabs button.active{color:var(--ink);border-bottom-color:var(--accent)}
+.tabs .n{margin-left:6px;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.bucket{margin-bottom:18px}
+.bucket h4{display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.06em}
+.bucket h4 .d{width:9px;height:9px;border-radius:50%}
+.bucket.crit h4{color:var(--crit)} .bucket.warn h4{color:var(--warn)} .bucket.ok h4{color:var(--ok)} .bucket.neutral h4{color:var(--neutral)}
+.bucket.crit .d{background:var(--crit)} .bucket.warn .d{background:var(--warn)} .bucket.ok .d{background:var(--ok)} .bucket.neutral .d{background:var(--neutral)}
+.find{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);margin-bottom:8px;border-left-width:3px}
+.find.crit{border-left-color:var(--crit)} .find.warn{border-left-color:var(--warn)} .find.ok{border-left-color:var(--ok)} .find.neutral{border-left-color:var(--neutral)}
+.find .th{width:64px;height:64px;border-radius:6px;background:var(--surface-2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--ink-3);font-size:11px}
+.find .th img{max-width:100%;max-height:100%;object-fit:contain}
+.find .fn{font-family:var(--font-mono);font-size:12.5px;font-weight:500;word-break:break-all}
+.find .iss{margin:4px 0 0;padding-left:18px}
+.find .iss li{margin:2px 0}
+.find .src{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.find .src .pill{font-size:11px;font-weight:500}
+.find .act{display:flex;flex-direction:column;gap:6px}
+.find.done{opacity:.55}
+@media (max-width:560px){.find{grid-template-columns:48px minmax(0,1fr)} .find .act{grid-column:1/-1;flex-direction:row;flex-wrap:wrap} .find .th{width:48px;height:48px}}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.ag{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;font-size:11.5px}
+.ag .im{aspect-ratio:1/1;max-width:100%;background:var(--surface-2);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.ag .im img{max-width:100%;max-height:100%;object-fit:contain}
+.ag .cap{padding:6px 8px;font-family:var(--font-mono);word-break:break-all;border-top:1px solid var(--line)}
+.ag .cap .sz{display:block;color:var(--ink-3);font-family:var(--font-ui)}
+.ag.crit{box-shadow:inset 0 3px 0 var(--crit)} .ag.warn{box-shadow:inset 0 3px 0 var(--warn)} .ag.ok{box-shadow:inset 0 3px 0 var(--ok)}
+.report{font-size:13.5px;line-height:1.55}
+.report h5{margin:14px 0 6px;font-size:12px;letter-spacing:.06em;text-transform:uppercase}
+.report ul{margin:0;padding-left:18px}
+.report .fn{font-family:var(--font-mono);font-size:12.5px}
+
+/* Chat */
+.chat{display:flex;flex-direction:column;height:560px;max-height:70vh}
+.chat .log{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:92%;padding:9px 12px;border-radius:10px;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word}
+.msg.me{align-self:flex-end;background:var(--accent);color:var(--accent-ink);border-bottom-right-radius:3px}
+.msg.rv{align-self:flex-start;background:var(--surface-2);border:1px solid var(--line);border-bottom-left-radius:3px}
+.msg.sys{align-self:center;background:none;color:var(--ink-3);font-size:12px;text-align:center}
+.chat .in{display:flex;gap:8px;padding:10px 12px;border-top:1px solid var(--line)}
+.chat .in textarea{flex:1;min-height:40px;max-height:120px}
+.sugg{display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px}
+.sugg button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--ink-2)}
+.sugg button:hover{border-color:var(--accent);color:var(--accent)}
+
+/* Tables */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th,.tbl td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.tbl th{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.tbl td input.input,.tbl td select.input{padding:5px 8px;border-radius:6px}
+.tblwrap{overflow-x:auto}
+.rulelist{list-style:none;margin:0;padding:0}
+.rulelist li{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+.rulelist li:first-child{border-top:0}
+.rulelist textarea.input{min-height:40px}
+.rulelist .btn{flex:0 0 auto}
+
+/* Workflows */
+.steps{display:flex;flex-direction:column;gap:8px}
+.step{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;align-items:start;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);cursor:grab}
+.step.dragging{opacity:.45}
+.step .grip{color:var(--ink-3);font-size:18px;line-height:1;user-select:none;padding-top:2px}
+.step .f-row{display:grid;grid-template-columns:minmax(0,1fr) 120px 110px 90px;gap:8px;margin-top:6px}
+@media (max-width:760px){.step .f-row{grid-template-columns:1fr 1fr}}
+.step input.input{padding:5px 8px;border-radius:6px}
+.step .title{font-weight:600;border:0;background:transparent;padding:0;width:100%}
+.step .mode{align-self:center}
+.lanes{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:860px){.lanes{grid-template-columns:1fr}}
+.lane{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:12px}
+.lane h4{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.lane ol{margin:0;padding-left:20px;font-size:13px}
+.lane li{margin:5px 0}
+.lane .tag{font-size:11px;font-weight:600;border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+.tag.auto{background:var(--ok-soft);color:var(--ok)} .tag.assist{background:var(--accent-soft);color:var(--accent)} .tag.human{background:var(--neutral-soft);color:var(--neutral)}
+.bar{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--neutral-soft);margin:6px 0 2px}
+.bar i{display:block;height:100%}
+.bar i.auto{background:var(--ok)} .bar i.assist{background:var(--accent)} .bar i.human{background:var(--neutral)}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--ink-2);flex-wrap:wrap}
+.legend span::before{content:"";display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.legend .auto::before{background:var(--ok)} .legend .assist::before{background:var(--accent)} .legend .human::before{background:var(--neutral)}
+
+
+/* Beta review bar: quiet strip at the bottom of the page; nothing floats over the work */
+.beta{margin:28px 24px 0;margin-right:max(24px,env(safe-area-inset-right,0px));border-top:1px solid var(--line);padding-top:14px}
+.beta summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;color:var(--ink-3);font-size:12.5px}
+.beta summary::-webkit-details-marker{display:none}
+.beta summary .pill{font-size:11px}
+.beta summary .caret{margin-left:auto;transition:transform .15s}
+.beta[open] summary .caret{transform:rotate(180deg)}
+.beta .inner{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin-top:12px}
+@media (max-width:860px){.beta .inner{grid-template-columns:1fr} .beta{margin:24px 16px 0}}
+.beta .bd{display:flex;flex-direction:column;gap:10px}
+.mic{display:flex;align-items:center;gap:12px}
+.mic button{width:44px;height:44px;border-radius:50%;border:2px solid var(--line-strong);background:var(--surface);display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px}
+.mic button svg{width:20px;height:20px}
+.mic button.on{background:var(--crit);border-color:var(--crit);color:#fff;animation:pulse 1.2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(194,54,44,.45)}100%{box-shadow:0 0 0 12px rgba(194,54,44,0)}}
+.fb-ctx{font-size:12px;color:var(--ink-3)}
+.fb-list{list-style:none;margin:0;padding:0;font-size:12.5px}
+.fb-list li{padding:6px 0;border-top:1px solid var(--line)}
+.beta-notes{font-size:13px;color:var(--ink-2)} .beta-notes ul{margin:6px 0 0;padding-left:18px} .beta-notes li{margin:3px 0}
+
+/* Universal intake */
+.linkrow{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:8px;margin-top:10px}
+@media (max-width:620px){.linkrow{grid-template-columns:1fr}}
+.linkrow input.input{min-width:0}
+.srcs{list-style:none;margin:0;padding:0}
+.srcs li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.srcs li:first-child{border-top:0}
+.srcs .k{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:4px;background:var(--neutral-soft);color:var(--neutral)}
+.srcs .k.order{background:var(--ok-soft);color:var(--ok)} .srcs .k.frames{background:var(--accent-soft);color:var(--accent)} .srcs .k.reference{background:var(--warn-soft);color:var(--warn)}
+.srcs .lbl{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap} .srcs .meta{font-size:12px;color:var(--ink-3)}
+.whats{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;font-size:13.5px;line-height:1.55}
+.whats b{color:var(--ink)}
+.tree{list-style:none;margin:0;padding:0;max-height:300px;overflow:auto;font-size:13px}
+.tree li{display:flex;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line)} .tree li:first-child{border-top:0}
+.tree .n{margin-left:auto;color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tree .skip{color:var(--ink-3)}
+
+/* Dialog */
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);padding:0;max-width:min(560px,calc(100vw - 32px));box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(10,14,24,.5)}
+dialog .hd{padding:14px 18px;border-bottom:1px solid var(--line);font-weight:600;display:flex;align-items:center}
+dialog .bd{padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+dialog .ft{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
+
+/* Phone shell */
+@media (max-width:860px){
+  .app{flex-direction:column}
+  .rail{width:auto;flex:0 0 auto;height:auto;position:sticky;top:env(safe-area-inset-top,0px);z-index:6;padding-left:0}
+  .brand{padding:12px max(16px,env(safe-area-inset-right,0px)) 10px max(16px,env(safe-area-inset-left,0px));border-bottom:0}
+  .nav{flex-direction:row;overflow-x:auto;padding:0 max(10px,env(safe-area-inset-left,0px)) 10px;gap:4px}
+  .nav button{width:auto;white-space:nowrap;padding:7px 10px}
+  .nav button.active{box-shadow:inset 0 -2px 0 var(--accent)}
+  .nav .badge{margin-left:4px}
+  .rail-foot{display:none}
+  .topbar{position:static;padding:12px max(16px,env(safe-area-inset-right,0px)) 12px max(16px,env(safe-area-inset-left,0px))}
+  .view{padding:16px max(16px,env(safe-area-inset-right,0px)) 40px max(16px,env(safe-area-inset-left,0px))}
+  .chat{height:460px}
+}
+</style>
+
+<div class="app">
+  <aside class="rail">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><rect x="2" y="2" width="28" height="28" rx="7" fill="#2457E6"/><path d="M9 23 16 8l7 15h-3.4l-3.6-8.2L12.4 23z" fill="#fff"/><rect x="12.5" y="18.6" width="7" height="2.4" rx="1.2" fill="#fff" opacity=".85"/></svg>
+      <div class="word">Ad<span>Autonomy</span></div>
+    </div>
+    <nav class="nav" aria-label="Sections">
+      <button data-view="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="10" width="8" height="11" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/></svg>Overview</button>
+      <button data-view="campaigns"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Campaigns<span class="badge" id="nav-camp-n">0</span></button>
+      <button data-view="review"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12l5 5L20 6"/></svg>Review<span class="badge" id="nav-rev-n" hidden>0</span></button>
+      <button data-view="rules"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 4v5c0 5-3.5 8.5-8 9-4.5-.5-8-4-8-9V7z"/></svg>Rules</button>
+      <button data-view="workflows"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="12" r="2.5"/><circle cx="6" cy="18" r="2.5"/><path d="M8 7l8 4M8 17l8-4"/></svg>Workflows</button>
+      <button data-view="reports"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 3h9l5 5v13H6z"/><path d="M14 3v6h6M9 13h6M9 17h6"/></svg>Reports</button>
+    </nav>
+    <div class="rail-foot">
+      <div class="ws" id="ws-name">ICP · Creative Operations</div>
+      <div style="margin-top:6px"><span class="dot" id="store-dot"></span><span id="store-label">Connecting…</span></div>
+      <div style="margin-top:4px" id="who"></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div><h1 id="tb-title">Overview</h1><div class="sub" id="tb-sub">Creative QC that reads the order, the board and the brand rules.</div></div>
+      <div class="grow"></div>
+      <label class="f" style="min-width:220px"><span class="sr">Campaign</span><select class="input" id="tb-campaign" aria-label="Campaign"></select></label>
+      <button class="btn primary" id="tb-new">New campaign</button>
+    </header>
+
+    <!-- OVERVIEW -->
+    <section class="view" id="view-overview">
+      <div class="tiles" id="ov-tiles"></div>
+      <div class="two">
+        <div>
+          <div class="card">
+            <div class="hd"><h2>Start a review</h2><div class="grow"></div><span class="muted small">Drop the round's exports and the tracker</span></div>
+            <div class="bd">
+              <div class="drop" id="ov-drop" tabindex="0" role="button" aria-label="Drop files or a folder to start a review"><b>Drop anything from the round here</b><span class="muted">Frame exports (PNG or JPG), the tracker (Excel or CSV), the board's layer XML, or a whole folder. Or paste links below: the Figma board and the Google Sheet together is enough. The app works out what each one is and tells you what it found.</span><input type="file" id="ov-file" multiple accept=".png,.jpg,.jpeg,.webp,.csv,.xlsx,.xlsm,.xml"></div>
+              <div class="linkrow"><input class="input" id="ov-link" placeholder="Or paste links: the Figma board, the Google Sheet (name the tab), a Drive folder, an Airtable table" aria-label="Link"><input class="input" id="ov-tab" placeholder="Sheet tab, e.g. Round 4" aria-label="Tab name"><button class="btn primary" id="ov-go">Read it</button></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>How a round moves through AdAutonomy</h2></div>
+            <div class="bd">
+              <div class="pipe">
+                <div class="st"><b>1 · Match</b>Each frame to its UAID row in the tracker</div>
+                <div class="st"><b>2 · Data checks</b>Names, sizes, formats, counts, status</div>
+                <div class="st"><b>3 · Visual checks</b>Logo, CTA, talent, edges, strays</div>
+                <div class="st"><b>4 · Studio list</b>Changes needed, please check, passed</div>
+              </div>
+              <p class="small muted" style="margin:12px 0 0">Data checks run instantly from the files alone. Visual checks run only when you ask, and the order of precedence is always the tracker row, then the platform rule, then the brand rule.</p>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="hd"><h2>Recent rounds</h2><div class="grow"></div><button class="btn ghost sm" data-go="reports">All reports</button></div>
+            <div class="bd"><ul class="list" id="ov-recent"></ul></div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>Rules awaiting confirmation</h2><div class="grow"></div><button class="btn ghost sm" data-go="rules">Open rules</button></div>
+            <div class="bd"><ul class="list" id="ov-observed"></ul></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CAMPAIGNS -->
+    <section class="view" id="view-campaigns">
+      <div class="card">
+        <div class="hd"><h2>Campaigns</h2><div class="grow"></div><span class="muted small">One campaign per client job. The tracker tab for that job is its order.</span></div>
+        <div class="tblwrap"><table class="tbl" id="camp-table"><thead><tr><th>Campaign</th><th>Client</th><th>Job</th><th>Prefix</th><th>Order rows</th><th>Ready to build</th><th>Rounds</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top:16px" id="camp-detail" hidden>
+        <div class="hd"><h2 id="cd-title">Campaign</h2><div class="grow"></div><button class="btn sm" id="cd-review">Review a round</button><button class="btn sm danger" id="cd-delete">Delete</button></div>
+        <div class="bd">
+          <div class="row">
+            <label class="f">Campaign name<input class="input" id="cd-name"></label>
+            <label class="f">Client<input class="input" id="cd-client"></label>
+            <label class="f">ICP job number<input class="input" id="cd-job" placeholder="280268"></label>
+            <label class="f">File-name prefix<input class="input mono" id="cd-prefix" placeholder="MM5"></label>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <label class="f" style="flex:2 1 320px">Figma board link (reference)<input class="input" id="cd-figma" placeholder="https://www.figma.com/design/…"></label>
+            <label class="f">Default market / language<input class="input" id="cd-market" placeholder="US EN"></label>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap"><button class="btn primary sm" id="cd-save">Save changes</button><span class="muted small" id="cd-saved"></span></div>
+          <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+          <h2 class="sec">Sources</h2>
+          <div class="drop" id="cd-drop" tabindex="0" role="button"><b>Drop the tracker, or anything else for this campaign</b><span class="muted">Excel, CSV, exports or a folder. Columns are mapped by header name, the header row is found by "UAID", and only Creative Vendor = ICP rows are kept.</span><input type="file" id="cd-file" multiple accept=".png,.jpg,.jpeg,.webp,.csv,.xlsx,.xlsm,.xml"></div>
+              <div class="linkrow"><input class="input" id="cd-link" placeholder="Or paste links: the Figma board, the Google Sheet (name the tab), a Drive folder, an Airtable table" aria-label="Link"><input class="input" id="cd-tab" placeholder="Sheet tab, e.g. Round 4" aria-label="Tab name"><button class="btn primary" id="cd-go">Read it</button></div>
+          <div id="cd-sources" style="margin-top:14px"></div>
+          <div id="cd-tracker" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REVIEW -->
+    <section class="view" id="view-review">
+      <div class="bench">
+        <div class="pane">
+          <h3>Round inputs</h3>
+          <div class="card"><div class="bd">
+            <div class="row">
+              <label class="f">Round<input class="input" id="rv-round" placeholder="R4" style="max-width:110px"></label>
+              <label class="f">Reviewer<input class="input" id="rv-reviewer" placeholder="Your name"></label>
+            </div>
+            <div style="margin-top:12px"><div class="drop" id="rv-drop" tabindex="0" role="button"><b>Drop the round, or paste where it lives</b><span class="muted">Frame exports, the tracker, the layer XML, or a Drive folder link. The name gives the UAID, placement and size; the pixels give the true dimensions; the picture gives the visual checks.</span><input type="file" id="rv-file" multiple accept=".png,.jpg,.jpeg,.webp,.csv,.xlsx,.xlsm,.xml"></div>
+              <div class="linkrow"><input class="input" id="rv-link" placeholder="Or paste links: the Figma board, the Google Sheet (name the tab), a Drive folder, an Airtable table" aria-label="Link"><input class="input" id="rv-tab" placeholder="Sheet tab, e.g. Round 4" aria-label="Tab name"><button class="btn primary" id="rv-go">Read it</button></div></div>
+            <div class="stat" id="rv-stat"></div>
+            <div class="chips" id="rv-chips"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+              <button class="btn primary" id="rv-run-data">Run data checks</button>
+              <button class="btn" id="rv-run-vision">Run visual checks</button>
+              <button class="btn ghost sm" id="rv-clear">Clear round</button>
+            </div>
+            <div class="progress" id="rv-prog" hidden><i></i></div>
+            <div class="small muted" id="rv-prog-label"></div>
+            <label class="f" style="margin-top:12px"><span>Visual check depth</span><select class="input" id="rv-tier"><option value="default">Standard (recommended)</option><option value="quick">Fast pass</option><option value="complex">Deep (slow, hardest rounds)</option></select></label>
+          </div></div>
+          <h3 style="margin-top:16px">Order rows for this round</h3>
+          <div class="card"><div class="bd" id="rv-order" style="max-height:320px;overflow:auto"></div></div>
+        </div>
+
+        <div class="pane">
+          <div class="tabs"><button class="active" data-tab="findings">Findings<span class="n" id="tab-n-f"></span></button><button data-tab="assets">Assets<span class="n" id="tab-n-a"></span></button><button data-tab="studio">Studio list</button></div>
+          <div id="rv-findings"></div>
+          <div id="rv-assets" hidden></div>
+          <div id="rv-studio" hidden>
+            <div class="card"><div class="hd"><h2>Copy-ready list for the studio</h2><div class="grow"></div><button class="btn sm" id="rv-copy">Copy</button><button class="btn primary sm" id="rv-save">Save report</button></div><div class="bd report" id="rv-report"></div></div>
+          </div>
+        </div>
+
+        <div class="pane pane-chat">
+          <h3>Reviewer</h3>
+          <div class="card chat">
+            <div class="log" id="ch-log"></div>
+            <div class="sugg" id="ch-sugg"></div>
+            <div class="in"><textarea class="input" id="ch-in" placeholder="Ask about this round…" rows="1"></textarea><button class="btn primary" id="ch-send">Send</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RULES -->
+    <section class="view" id="view-rules">
+      <div class="two">
+        <div>
+          <div class="card">
+            <div class="hd"><h2>Platform placement rules</h2><div class="grow"></div><button class="btn sm" id="rl-add-platform">Add platform</button></div>
+            <div class="tblwrap"><table class="tbl" id="rl-platforms"><thead><tr><th>Platform</th><th>Logo</th><th>Title treatment</th><th>CTA on art</th><th>Status</th><th></th></tr></thead><tbody></tbody></table></div>
+            <div class="bd small muted">Logo / TT / CTA values: <b>yes</b>, <b>no</b>, <b>order</b> (only if the tracker row asks), <b>flag</b> (always put under Please check). Observed rules were seen on an approved board and still need confirming.</div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>Spec checks (per UAID)</h2></div>
+            <div class="bd"><ul class="rulelist" id="rl-spec"></ul></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="hd"><h2>Brand rules</h2><div class="grow"></div><button class="btn sm" id="rl-add-brand">Add rule</button></div>
+            <div class="bd"><ul class="rulelist" id="rl-brand"></ul></div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>Video rules</h2></div>
+            <div class="bd"><ul class="rulelist" id="rl-video"></ul></div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>Output style</h2></div>
+            <div class="bd"><textarea class="input" id="rl-output" rows="4"></textarea></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap"><button class="btn primary" id="rl-save">Save rules</button><button class="btn ghost" id="rl-reset">Restore defaults</button><span class="small muted" id="rl-saved"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- WORKFLOWS -->
+    <section class="view" id="view-workflows">
+      <div class="two">
+        <div>
+          <div class="card">
+            <div class="hd"><label class="f" style="flex:1;min-width:200px"><span class="sr">Workflow</span><select class="input" id="wf-select"></select></label><button class="btn sm" id="wf-new">New workflow</button><button class="btn sm danger" id="wf-delete">Delete</button></div>
+            <div class="bd">
+              <div class="row"><label class="f">Workflow name<input class="input" id="wf-name"></label><label class="f">Team / client<input class="input" id="wf-team"></label><label class="f">Rounds per month<input class="input num" id="wf-freq" type="number" min="1" step="1"></label></div>
+              <p class="small muted" style="margin:12px 0 8px">Drag steps to reorder. Minutes are per round, as the work happens today.</p>
+              <div class="steps" id="wf-steps"></div>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn sm" id="wf-add-step">Add step</button><button class="btn primary" id="wf-analyze">Analyze and propose automation</button><button class="btn ghost sm" id="wf-save">Save</button><span class="small muted" id="wf-saved"></span></div>
+            </div>
+          </div>
+          <div class="card" style="margin-top:16px">
+            <div class="hd"><h2>Describe a new workflow in plain words</h2></div>
+            <div class="bd"><textarea class="input" id="wf-describe" rows="3" placeholder="Example: Client sends a brief by email. A PM logs it in the job system, the studio builds in Figma, a second PM checks copy against the brief, legal signs off, then we export and upload to the client portal."></textarea><div style="margin-top:8px"><button class="btn" id="wf-build">Turn into steps</button></div></div>
+          </div>
+        </div>
+        <div>
+          <div class="card">
+            <div class="hd"><h2>Automation plan</h2><div class="grow"></div><span class="pill" id="wf-plan-pill" hidden></span></div>
+            <div class="bd" id="wf-plan"><div class="empty">Analyze a workflow to see which steps can run on their own, which should be assisted, and what stays with a person.</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REPORTS -->
+    <section class="view" id="view-reports">
+      <div class="card">
+        <div class="hd"><h2>Saved reports</h2><div class="grow"></div><span class="muted small">Every saved round, newest first. Shared with everyone in this workspace.</span></div>
+        <div class="tblwrap"><table class="tbl" id="rp-table"><thead><tr><th>Date</th><th>Campaign</th><th>Round</th><th>Reviewer</th><th>Changes</th><th>Check</th><th>Passed</th><th>Missing</th><th></th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div class="card" style="margin-top:16px" id="rp-detail" hidden>
+        <div class="hd"><h2 id="rp-title">Report</h2><div class="grow"></div><button class="btn sm" id="rp-copy">Copy</button><button class="btn sm danger" id="rp-delete">Delete</button></div>
+        <div class="bd report" id="rp-body"></div>
+      </div>
+    </section>
+
+    <details class="beta" id="beta" hidden>
+      <summary><span class="pill accent">Beta</span><span>Beta review and features</span><span class="muted">Say what should change. Reviewed by John; the next version answers it.</span><svg class="caret" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div class="inner">
+        <div class="card"><div class="hd"><h2>Change request</h2><div class="grow"></div><span class="fb-ctx" id="fb-ctx"></span></div><div class="bd">
+          <div class="mic"><button id="fb-mic" aria-label="Start or stop recording"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><div class="small muted" id="fb-mic-label">Tap the mic and talk, tap again to stop. Your words appear here and the recording goes along.</div></div>
+          <textarea class="input" id="fb-text" rows="4" placeholder="Or type it: what you expected, what happened, what you want instead."></textarea>
+          <div class="row"><label class="f">Your name<input class="input" id="fb-name"></label><label class="f">Type<select class="input" id="fb-kind"><option>Something is wrong</option><option>Make it work differently</option><option>Add a feature</option><option>Wording or wording rule</option></select></label></div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn primary sm" id="fb-send">Send request</button><span class="small muted" id="fb-status"></span></div>
+          <ul class="fb-list" id="fb-list"></ul>
+        </div></div>
+        <div class="card"><div class="hd"><h2>What this beta can and cannot do yet</h2></div><div class="bd beta-notes">
+          <b>Works now</b><ul><li>Takes the order from Excel, CSV, a Google Sheets link (with a tab name) or an Airtable table link, and frames from exports or a Google Drive folder link. One box, any source.</li><li>Reads exports and the tracker from the files alone; no board access needed.</li><li>Data checks, the four-section studio list, saved reports, editable rules, workflow mapping.</li></ul>
+          <b>Needs the workspace connections</b><ul><li>Visual checks and the reviewer panel. They work from the link John sent you; there is nothing to enter.</li><li>Private Google Sheets and Drive folders need the workspace Google account; link-shared ones work without it.</li></ul><b>Recent changes</b><ul id="beta-log"></ul>
+          <b>Known limits</b><ul><li>Campaigns, rules and reports live in this browser until the team store is switched on.</li><li>Video assets are checked by name and spec only.</li></ul>
+        </div></div>
+      </div>
+    </details>
+  </main>
+</div>
+
+<dialog id="dlg-new">
+  <div class="hd">New campaign</div>
+  <div class="bd">
+    <label class="f">Campaign name<input class="input" id="dn-name" placeholder="Mistletoe Murders S5"></label>
+    <div class="row"><label class="f">Client<input class="input" id="dn-client" value="Audible"></label><label class="f">ICP job number<input class="input" id="dn-job"></label><label class="f">File-name prefix<input class="input mono" id="dn-prefix" placeholder="MM5"></label></div>
+    <label class="f">Figma board link (kept for reference)<input class="input" id="dn-figma"></label>
+  </div>
+  <div class="ft"><button class="btn" id="dn-cancel">Cancel</button><button class="btn primary" id="dn-create">Create</button></div>
+</dialog>
+<dialog id="dlg-prompt">
+  <div class="hd" id="dp-title">Choose</div>
+  <div class="bd"><p class="small muted" id="dp-body" style="margin:0"></p><label class="f" id="dp-selwrap" hidden><span id="dp-sellabel">Tab</span><select class="input" id="dp-select"></select></label><label class="f" id="dp-inwrap" hidden><span id="dp-inlabel">Value</span><input class="input" id="dp-input" autocomplete="off"></label></div>
+  <div class="ft"><button class="btn" id="dp-cancel">Cancel</button><button class="btn primary" id="dp-ok">Continue</button></div>
+</dialog>
+<dialog id="dlg-drive" style="max-width:min(640px,calc(100vw - 32px))">
+  <div class="hd" id="dd-title">Drive folder</div>
+  <div class="bd"><div class="whats" id="dd-summary"></div><div class="small muted" id="dd-hint">Tick the folders to load. Old deliveries, internal and mockup folders are unticked.</div><ul class="tree" id="dd-tree"></ul><label class="small" id="dd-opt" hidden style="display:flex;gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="dd-all"><span id="dd-optlabel">Also load frames without a UAID in the name</span></label><div class="progress" id="dd-prog" hidden><i></i></div><div class="small muted" id="dd-status"></div></div>
+  <div class="ft"><button class="btn" id="dd-cancel">Cancel</button><button class="btn primary" id="dd-load">Load</button></div>
+</dialog>
+<dialog id="dlg-confirm">
+  <div class="hd" id="dc-title">Are you sure?</div>
+  <div class="bd"><div id="dc-body"></div></div>
+  <div class="ft"><button class="btn" id="dc-no">Cancel</button><button class="btn danger" id="dc-yes">Delete</button></div>
+</dialog>
+
+<form name="feedback" data-netlify="true" netlify-honeypot="bot-field" hidden>
+  <input name="name"><input name="kind"><textarea name="text"></textarea><input name="view"><input name="campaign"><input name="round"><input name="finding"><input name="page"><input name="at"><input type="file" name="audio"><input name="bot-field">
+</form>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+/* ===================== Utilities ===================== */
+const $ = (s, r=document) => r.querySelector(s);
+const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
+const uid = () => Math.random().toString(36).slice(2,8) + Date.now().toString(36).slice(-4);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = s => String(s ?? '').toLowerCase().replace(/[^a-z0-9]/g,'');
+const fmtDate = ts => { try { return new Date(ts).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}); } catch(e){ return ''; } };
+const fmtDT = ts => { try { return new Date(ts).toLocaleString(undefined,{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}); } catch(e){ return ''; } };
+let toastT; function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, 2600); }
+function ls(k, v){ try { if (v===undefined) { const r=localStorage.getItem(k); return r? JSON.parse(r): null; } localStorage.setItem(k, JSON.stringify(v)); } catch(e){ return null; } }
+async function copyText(txt){ try { await navigator.clipboard.writeText(txt); toast('Copied'); } catch(e){ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy'); toast('Copied');}catch(_){ toast('Select and copy the text manually'); } ta.remove(); } }
+function confirmDlg(title, body, yes='Delete'){ return new Promise(res=>{ const d=$('#dlg-confirm'); $('#dc-title').textContent=title; $('#dc-body').textContent=body; $('#dc-yes').textContent=yes; const done=v=>{ d.close(); res(v); }; $('#dc-yes').onclick=()=>done(true); $('#dc-no').onclick=()=>done(false); d.onclose=()=>res(false); d.showModal(); }); }
+
+/* ===================== Default rules (from the ICP Audible QC spec) ===================== */
+const DEFAULT_RULES = {
+  version: 1,
+  brand: [
+    { id:'b1', text:'Audible logo centering: the logo is centered using the left side of the "i" as the center line. Does not apply to the Audible Original (AO) badge.', status:'confirmed' },
+    { id:'b2', text:'All art goes to the edges. Backgrounds extend to the edges with no single-pixel bars.', status:'confirmed' },
+    { id:'b3', text:'Backgrounds are never over the Audible logo in any way.', status:'confirmed' },
+    { id:'b4', text:'No stray elements on any asset.', status:'confirmed' },
+    { id:'b5', text:'Safe-zone overlays may be left on some assets. Never call them out.', status:'confirmed' },
+    { id:'b6', text:'Check the art-worker instructions in the order (rounded edges, CTAs, Detailed Requirements) and hold the creative to them.', status:'confirmed' },
+    { id:'b7', text:'Order of precedence: the tracker row for the UAID wins, then the platform rule, then the brand rule.', status:'confirmed' }
+  ],
+  platforms: [
+    { id:'p1',  name:'Advertising (AoA)',  match:['advertising','aoa','amazonads'], logo:'yes', tt:'yes', cta:'no',  status:'confirmed', note:'Logo always present and visible. The yellow shape on AoA banners is the Audible chevron, not a CTA button. Compare against the matching reference size.' },
+    { id:'p2',  name:'Amazon Devices',     match:['amazondevices','amazondevice','amazon'], logo:'yes', tt:'yes', cta:'no', status:'confirmed', note:'No CTA on final art. The yellow button is delivered separately; "_m" versions and mockups show it. Minimum font size 32pt.' },
+    { id:'p3',  name:'Apple',              match:['apple'], logo:'no', tt:'no', cta:'no', status:'confirmed', note:'Screenshot-size assets carry the title treatment only (cast names optional). All other Apple assets are clean art. Art in the upper 60%, lower 40% left for live text.' },
+    { id:'p4',  name:'Email',              match:['email'], logo:'no', tt:'yes', cta:'order', status:'confirmed', note:'No Audible logo (AO badge allowed). No CTA unless the order asks.' },
+    { id:'p5',  name:'Audible PDP',        match:['audiblepdp','pdp'], logo:'no', tt:'no', cta:'order', status:'confirmed', note:'Final is clean art only. Black and white on recent rounds. No CTA unless the order asks.' },
+    { id:'p6',  name:'Unity',              match:['unity'], logo:'no', tt:'yes', cta:'order', status:'observed', note:'No CTA unless the order asks (confirmed). Logo and TT observed.' },
+    { id:'p7',  name:'Internal comms',     match:['internalcomms','internal','comms'], logo:'no', tt:'unknown', cta:'no', status:'confirmed', note:'No Audible logo going forward. Earlier wide formats that carried it are not the rule.' },
+    { id:'p8',  name:'Goodreads',          match:['goodreads'], logo:'yes', tt:'yes', cta:'yes', status:'observed', note:'Yellow "Listen now". On the 300x250 the logo sits bottom-left and the button bottom-right as separate elements. The 1600x875 skin has a transparent centre by spec.' },
+    { id:'p9',  name:'YouAPPi',            match:['youappi','youapp'], logo:'yes', tt:'yes', cta:'yes', status:'observed', note:'"Listen on Audible" logo and a yellow "Listen now".' },
+    { id:'p10', name:'Dataseat',           match:['dataseat'], logo:'yes', tt:'yes', cta:'yes', status:'observed', note:'Logo, TT and a yellow "Install app".' },
+    { id:'p11', name:'Strava',             match:['strava'], logo:'unknown', tt:'unknown', cta:'flag', status:'observed', note:'Yellow "Free Trial" in early rounds, hidden by R16. Flag any CTA.' },
+    { id:'p12', name:'Audible Web',        match:['audibleweb','web'], logo:'no', tt:'yes', cta:'yes', status:'observed', note:'AO badge instead of the Audible logo. Yellow "Listen now" on 350x500 and 540x657.' },
+    { id:'p13', name:'Audible App',        match:['audibleapp','app','inappbanner','inapp'], logo:'no', tt:'yes', cta:'flag', status:'observed', note:'AO badge. The 939x566 App Home tile carries a written "Listen now"; whether that is a rule is unconfirmed, so flag written CTAs.' },
+    { id:'p14', name:'Google',             match:['google'], logo:'yes', tt:'yes', cta:'no', status:'observed', note:'"Listen on Audible" logo, TT and cast names. No CTA.' },
+    { id:'p15', name:'Nift / YouTube / Pinterest / AMC', match:['nift','youtube','pinterest','amc'], logo:'yes', tt:'yes', cta:'no', status:'observed', note:'"Listen on Audible" logo, TT and cast names. No CTA. YouTube video gets no captions.' },
+    { id:'p16', name:'Snapchat / Prime Video', match:['snapchat','primevideo','prime'], logo:'no', tt:'yes', cta:'no', status:'observed', note:'No logo. Prime Video adds "Behind the Scenes".' },
+    { id:'p17', name:'Meta / Reddit / Push / Loyalty+ / JCDecaux / Outfront / Fandom', match:['meta','reddit','push','loyalty','loyaltyplus','jcdecaux','outfront','fandom'], logo:'unknown', tt:'unknown', cta:'no', status:'observed', note:'No CTA on the art. Reddit orders say "No CTA".' },
+    { id:'p18', name:'Google Play',        match:['googleplay','play'], logo:'no', tt:'no', cta:'no', status:'confirmed', note:'No text or logos, per the order\'s Detailed Requirements.' }
+  ],
+  spec: [
+    { id:'s1', text:'Frame exists: every row being QC\'d has a frame whose name ends in its UAID.' },
+    { id:'s2', text:'File name matches the File Naming Convention exactly. Flag a wrong or missing UAID.' },
+    { id:'s3', text:'Dimensions are an exact pixel match. Flag an off-by-one (521x521 for 520x520). Never round.' },
+    { id:'s4', text:'File format matches the row: jpg, png, psd (layered) or mp4.' },
+    { id:'s5', text:'CTA: "On-Image CTA" plus text means that text is on the art. "No CTA" means none. A blank CTA field means the platform rule applies. Flag every written (text) CTA for a human check.' },
+    { id:'s6', text:'Copy: character limits count spaces.' },
+    { id:'s7', text:'Talent: the named person in Working Asset Name / Additional Note is the person on the art.' },
+    { id:'s8', text:'Detailed Requirements: rounded corners (16 up to 499px, 24 at 500px and above), minimum font size (Amazon Devices 32pt), file size cap, "no text or logos", upper 60% art (Apple), cover counts, black and white.' },
+    { id:'s9', text:'Status: Asset Status "Needs Revisions" while the board says Approved is a flag. Skip CANCELLED rows, but flag a cancelled asset still marked Approved.' },
+    { id:'s10', text:'Frames suffixed _Mockup or _mockup are reference only. Hidden layers named Safe Area, SZ or Ref are guides.' }
+  ],
+  video: [
+    { id:'v1', text:'Captions: YouTube, and Google or other rows billed as "YouTube link", get no captions. TikTok has its own safe zones. All other platforms get captions and share the same safe zones.' },
+    { id:'v2', text:'Dimensions are written in pixels with no spaces: 1x1 = 1080x1080, 9x16 = 1080x1920, 16x9 = 1920x1080.' },
+    { id:'v3', text:'Dupes: Broadcast/CTV US and CA are the same asset when creative and length match. Cinema (NCM, Cineplex, Val Morgan) each need their own mix. Masters and dupes split by caption treatment and by language.' }
+  ],
+  output: 'A list of file names with the changes needed for each. Never call out safe-zone overlays. Concise, warm, direct and copy-pasteable. Flag issues honestly rather than giving a polished but incomplete answer. Sections: Changes needed · Please check · Passed · Not on this board.'
+};
+
+const DEFAULT_WORKFLOW = {
+  id: 'wf-icp-qc', name: 'Audible creative QC (as run today)', team: 'ICP · Audible', freq: 8,
+  steps: [
+    { id:'w1', title:'Export the client order from Airtable as CSV', owner:'PM', tool:'Airtable', minutes:10, note:'Airtable is never locked and changes daily; ICP has a login but no instance of its own.' },
+    { id:'w2', title:'Sync the CSV into the tracker and call out changes', owner:'PM', tool:'Google Sheets', minutes:35, note:'Only Creative Vendor = ICP rows. Report new assets and any change to format, CTA, concept, ratio or duration.' },
+    { id:'w3', title:'Studio builds one frame per deliverable in Figma', owner:'Studio', tool:'Figma', minutes:0, note:'Frame named with the delivery file name; status pill New, In production, Revised, Approved, Delivered, On hold.' },
+    { id:'w4', title:'Compare each frame with its tracker row', owner:'PM', tool:'Figma + Sheets', minutes:60, note:'Name, UAID, size, format, CTA, copy, talent, Detailed Requirements.' },
+    { id:'w5', title:'Check placement and brand rules by eye', owner:'PM', tool:'Figma', minutes:45, note:'Logo or AO badge, title treatment, CTA, edges, strays, logo centred on the left of the "i".' },
+    { id:'w6', title:'Write the fixes list and pin comments for the studio', owner:'PM', tool:'Figma comments / email', minutes:30, note:'Changes needed, Please check, Passed, Not on this board.' },
+    { id:'w7', title:'Log the round and raise revisions in the job system', owner:'PM', tool:'ICP job system', minutes:20, note:'Revision number, type, requested-by date, description.' },
+    { id:'w8', title:'Export approved assets and deliver', owner:'Studio / PM', tool:'Iconik / Media Central', minutes:25, note:'Studio Status and delivery columns updated by hand.' }
+  ],
+  analysis: null
+};
+
+/* ===================== State ===================== */
+const S = {
+  campaigns: [], reviews: [], workflows: [], rules: null,
+  trackers: {},           // campaignId -> rows[]
+  campaignId: null, view: 'overview',
+  round: { assets: [], frames: [], files: [], findings: null, visionDone: false, report: '' },
+  chat: [], wfId: null, me: ''
+};
+
+/* ===================== Storage (shared db when available, this browser otherwise) ===================== */
+const Store = {
+  mode: 'local', db: null, ready: false, unsubs: [],
+  async init(){
+    let db = null;
+    try { if (window.claude?.use) db = await window.claude.use('db'); } catch(e){ db = null; }
+    if (db) { this.db = db; this.mode = 'shared'; await this.subscribe(); }
+    else { this.mode = 'local'; this.loadLocal(); }
+    this.ready = true; setStoreLabel();
+  },
+  loadLocal(){
+    S.campaigns = ls('ada:campaigns') || []; S.reviews = ls('ada:reviews') || []; S.workflows = ls('ada:workflows') || [];
+    S.trackers = ls('ada:trackers') || {}; S.rules = ls('ada:rules') || structuredClone(DEFAULT_RULES);
+    if (!S.workflows.length) S.workflows = [structuredClone(DEFAULT_WORKFLOW)];
+    renderAll();
+  },
+  persistLocal(){ ls('ada:campaigns', S.campaigns); ls('ada:reviews', S.reviews); ls('ada:workflows', S.workflows); ls('ada:trackers', S.trackers); ls('ada:rules', S.rules); },
+  async subscribe(){
+    const db = this.db; let pending = 3; const timer = setTimeout(()=>{ if (pending>0){ S.rules = S.rules || structuredClone(DEFAULT_RULES); setStoreLabel('Store slow to answer'); renderAll(); } }, 10000);
+    const done = () => { pending--; if (pending<=0) clearTimeout(timer); };
+    const onErr = e => { console.error('db', e); setStoreLabel('Store error'); };
+    this.unsubs.push(db.collection('campaigns').onSnapshot(snap => { S.campaigns = snap.docs.map(d=>({ id:d.id, ...d.data() })); done(); renderAll(); }, onErr));
+    this.unsubs.push(db.collection('reviews').orderBy('at','desc').limit(500).onSnapshot(snap => { S.reviews = snap.docs.map(d=>({ id:d.id, ...d.data() })); done(); renderAll(); }, onErr));
+    this.unsubs.push(db.collection('workflows').onSnapshot(snap => { S.workflows = snap.docs.map(d=>({ id:d.id, ...d.data() })); if (!S.workflows.length && !snap.metadata.fromCache) { this.save('workflows', structuredClone(DEFAULT_WORKFLOW)); } renderAll(); }, onErr));
+    this.unsubs.push(db.doc('rules/config').onSnapshot(snap => { S.rules = snap.exists ? snap.data() : structuredClone(DEFAULT_RULES); renderRules(); renderOverview(); }, onErr));
+  },
+  async save(col, obj){
+    if (!obj.id) obj.id = uid();
+    obj.updatedAt = Date.now();
+    const arr = S[col]; const i = arr.findIndex(x=>x.id===obj.id); if (i>=0) arr[i]=obj; else arr.push(obj);
+    if (this.mode==='shared') { try { const { id, ...body } = obj; await this.db.doc(`${col}/${id}`).set(body); } catch(e){ console.error(e); toast('Could not save to the shared store'); } }
+    else this.persistLocal();
+    renderAll(); return obj;
+  },
+  async remove(col, id){
+    S[col] = S[col].filter(x=>x.id!==id);
+    if (this.mode==='shared') { try { await this.db.doc(`${col}/${id}`).delete(); } catch(e){ console.error(e); } }
+    else this.persistLocal();
+    renderAll();
+  },
+  async saveRules(rules){
+    S.rules = rules;
+    if (this.mode==='shared') { try { await this.db.doc('rules/config').set(rules); } catch(e){ console.error(e); toast('Could not save rules'); } }
+    else this.persistLocal();
+    renderRules(); renderOverview();
+  },
+  async saveTracker(campaignId, rows){
+    S.trackers[campaignId] = rows;
+    if (this.mode==='shared') {
+      try {
+        const col = this.db.collection(`campaigns/${campaignId}/tracker`);
+        const old = await col.get(); for (const d of old.docs) await this.db.doc(`campaigns/${campaignId}/tracker/${d.id}`).delete();
+        const size = 120; let n = 0;
+        for (let i=0;i<rows.length;i+=size){ await this.db.doc(`campaigns/${campaignId}/tracker/c${String(n).padStart(3,'0')}`).set({ i:n, rows: rows.slice(i,i+size) }); n++; }
+        
+      } catch(e){ console.error(e); toast('Tracker saved here, but the shared copy failed'); }
+    } else this.persistLocal();
+  },
+  async loadTracker(campaignId){
+    if (S.trackers[campaignId]) return S.trackers[campaignId];
+    if (this.mode==='shared') {
+      try { const snap = await this.db.collection(`campaigns/${campaignId}/tracker`).orderBy('i').get(); const rows=[]; snap.docs.forEach(d=>rows.push(...(d.data().rows||[]))); S.trackers[campaignId]=rows; return rows; } catch(e){ console.error(e); }
+    }
+    return S.trackers[campaignId] || [];
+  }
+};
+function setStoreLabel(extra){
+  const lbl = Store.mode==='shared' ? 'Shared workspace store' : 'Saved in this browser only';
+  $('#store-label').textContent = extra || lbl;
+  $('#store-dot').style.background = Store.mode==='shared' ? 'var(--ok)' : 'var(--warn)';
+}
+
+/* ===================== Routing ===================== */
+const TITLES = {
+  overview:['Overview','Creative QC that reads the order, the board and the brand rules.'],
+  campaigns:['Campaigns','One campaign per client job, with its order rows.'],
+  review:['Review a round','Match, data checks, visual checks, studio list.'],
+  rules:['Rules','What every asset is held to. Edit here; the reviewer reads this.'],
+  workflows:['Workflows','Map how a QC process runs today and see what can run on its own.'],
+  reports:['Reports','Saved rounds, shared across the workspace.']
+};
+function go(view){
+  if (!TITLES[view]) view='overview';
+  S.view = view;
+  $$('.view').forEach(v=>v.classList.toggle('active', v.id==='view-'+view));
+  $$('.nav button').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
+  $('#tb-title').textContent = TITLES[view][0]; $('#tb-sub').textContent = TITLES[view][1];
+  if (location.hash !== '#'+view) { try { history.replaceState(null,'','#'+view); } catch(e){} }
+  if (view==='review') renderReview(); if (view==='reports') renderReports(); if (view==='workflows') renderWorkflows(); if (view==='rules') renderRules(); if (view==='campaigns') renderCampaigns();
+  window.scrollTo({top:0}); if (typeof fbRenderCtx==='function' && $('#beta')?.open) fbRenderCtx();
+}
+$$('.nav button').forEach(b=>b.addEventListener('click', ()=>go(b.dataset.view)));
+$$('[data-go]').forEach(b=>b.addEventListener('click', ()=>go(b.dataset.go)));
+window.addEventListener('hashchange', ()=>{ if (/(^#|[&#])k=/.test(location.hash)) takeKey(); go(location.hash.replace('#','')); });
+
+function renderAll(){ renderTopbar(); renderOverview(); renderCampaigns(); renderReports(); renderWorkflows(); if (S.view==='review') renderOrderRows(); }
+function currentCampaign(){ return S.campaigns.find(c=>c.id===S.campaignId) || null; }
+function renderTopbar(){
+  const sel = $('#tb-campaign'); const cur = S.campaignId;
+  if (!S.campaigns.find(c=>c.id===cur) && S.campaigns.length) S.campaignId = (ls('ada:lastCampaign') && S.campaigns.find(c=>c.id===ls('ada:lastCampaign'))) ? ls('ada:lastCampaign') : S.campaigns[0].id;
+  sel.innerHTML = S.campaigns.length ? S.campaigns.map(c=>`<option value="${esc(c.id)}" ${c.id===S.campaignId?'selected':''}>${esc(c.name)}${c.client?' · '+esc(c.client):''}</option>`).join('') : '<option value="">No campaign yet</option>';
+  $('#nav-camp-n').textContent = S.campaigns.length;
+}
+$('#tb-campaign').addEventListener('change', async e=>{ S.campaignId = e.target.value || null; ls('ada:lastCampaign', S.campaignId); await Store.loadTracker(S.campaignId); renderAll(); if (S.view==='campaigns') showCampaign(S.campaignId); });
+
+/* ===================== Parsing: file names, tracker, Figma layer XML ===================== */
+const UAID_RE = /^\d{5}-\d{6}$/;
+// A row is in scope when the tracker says READY TO BUILD; an Airtable order has no Studio Status, so every row that is not cancelled counts.
+const isReady = r => r.studioStatus ? /ready to build/i.test(r.studioStatus) : !/cancel/i.test((r.assetStatus||'')+' '+(r.note||''));
+function parseName(name){
+  const m = String(name).match(/\.(png|jpe?g|webp|gif|psd|mp4|mov)$/i);
+  const ext = m ? m[1].toLowerCase().replace('jpeg','jpg') : '';
+  const base = String(name).replace(/\.(png|jpe?g|webp|gif|psd|mp4|mov)$/i,'').trim();
+  const isMockup = /_mockup$/i.test(base) || /_m$/.test(base);
+  const parts = base.split('_').filter(Boolean);
+  let uaidIdx = -1; for (let i=parts.length-1;i>=0;i--) if (UAID_RE.test(parts[i])) { uaidIdx=i; break; }
+  const uaid = uaidIdx>=0 ? parts[uaidIdx] : null;
+  const sizeIdx = parts.findIndex(p=>/^\d+x\d+$/i.test(p) || /^\d+:\d+$/.test(p));
+  const size = sizeIdx>=0 ? parts[sizeIdx].toLowerCase() : null;
+  const market = sizeIdx>=0 && parts[sizeIdx+1] && /^[A-Z]{2}$/.test(parts[sizeIdx+1]) ? parts[sizeIdx+1] : null;
+  const lang = market && parts[sizeIdx+2] && /^[A-Z]{2}$/.test(parts[sizeIdx+2]) ? parts[sizeIdx+2] : null;
+  const extraStart = sizeIdx>=0 ? sizeIdx + 1 + (market?1:0) + (lang?1:0) : 2;
+  const extra = parts.slice(extraStart, uaidIdx>=0?uaidIdx:parts.length).join('_');
+  return { name:String(name), base, ext, isMockup, prefix: parts[0]||'', platform: parts[1]||'', size, market, lang, extra, uaid };
+}
+function parseDims(s){ const m = String(s||'').match(/(\d{2,5})\s*[x×X]\s*(\d{2,5})/); return m ? { w:+m[1], h:+m[2] } : null; }
+function parseLimit(...texts){ for (const t of texts){ const s=String(t||''); let m = s.match(/(\d{2,3})\s*(?:characters?|chars?|char)\b/i) || s.match(/\bmax(?:imum)?\.?\s*(?:of\s*)?(\d{2,3})\b/i) || s.match(/(\d{2,3})\s*char/i); if (m) return +m[1]; } return null; }
+
+const COLS = { uaid:'UAID', studioStatus:'STUDIO STATUS', note:'Production note', job:'AXIOM JOB NO', category:'CATEGORY', billing:'BILLING TYPE', revision:'Revision#', assetStatus:'Asset Status', fileName:'File Naming Convention (Auto-generated)', workingName:'Working Asset Name', concept:'Creative Concept (Drop-down)', conceptFree:'Creative Concept (Free form)', vendor:'Creative Vendor', market:'Marketplace', lang:'Language', ctaType:'CTA Type', cta:'CTA', copy:'Copy on Asset', disclaimer:'Disclaimer', dims:'Dimensions', duration:'Duration', format:'File Format', subtitle:'Subtitle', addNote:'Additional Note', reqs:'Detailed Requirements', guidelines:'Guidelines & More', channel:'Marketing Channel', subChannel:'Sub-Channel', partner:'Partner/Surface', headline:'Headline (Social)', primary:'Primary Text (Social)', linkDesc:'Link Description (Social)', dupe:'Dupe Status', master:'Master UAID' };
+function parseCSV(text){
+  const rows=[]; let row=[], cell='', q=false;
+  for (let i=0;i<text.length;i++){ const c=text[i];
+    if (q){ if (c==='"'){ if (text[i+1]==='"'){ cell+='"'; i++; } else q=false; } else cell+=c; }
+    else if (c==='"') q=true; else if (c===','){ row.push(cell); cell=''; } else if (c==='\n'||c==='\r'){ if (c==='\r'&&text[i+1]==='\n') i++; row.push(cell); rows.push(row); row=[]; cell=''; } else cell+=c; }
+  if (cell.length||row.length){ row.push(cell); rows.push(row); }
+  return rows;
+}
+function tableToRows(aoa){
+  let hi=-1; for (let i=0;i<Math.min(aoa.length,12);i++){ if ((aoa[i]||[]).some(v=>String(v).trim().toUpperCase()==='UAID')) { hi=i; break; } }
+  if (hi<0) return null;
+  const hdr = aoa[hi].map(h=>norm(h)); const idx={}; for (const [k,label] of Object.entries(COLS)){ const j = hdr.indexOf(norm(label)); if (j>=0) idx[k]=j; }
+  if (idx.uaid===undefined) return null;
+  const out=[]; const hasVendor = idx.vendor!==undefined;
+  for (let r=hi+1;r<aoa.length;r++){ const a=aoa[r]||[]; const uaid=String(a[idx.uaid]??'').trim(); if (!UAID_RE.test(uaid)) continue;
+    const row={}; for (const k of Object.keys(idx)) row[k]=String(a[idx[k]]??'').trim(); row.uaid=uaid;
+    if (hasVendor && row.vendor && !/icp/i.test(row.vendor)) continue;
+    out.push(row); }
+  return { rows: out, headers: Object.keys(idx), headerRow: hi+1, vendorFiltered: hasVendor };
+}
+async function parseTrackerFile(file){
+  const name=file.name.toLowerCase(); const tabs=[];
+  if (name.endsWith('.csv')){ const t = tableToRows(parseCSV(await file.text())); if (t) tabs.push({ name:file.name, ...t }); }
+  else if (window.XLSX){ const wb = XLSX.read(await file.arrayBuffer(), { type:'array' });
+    for (const sn of wb.SheetNames){ const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header:1, defval:'', raw:false }); const t = tableToRows(aoa); if (t && t.rows.length) tabs.push({ name:sn, ...t }); } }
+  else throw new Error('The spreadsheet library did not load; export the tab as CSV instead.');
+  return tabs;
+}
+function parseLayerXML(text){
+  const doc = new DOMParser().parseFromString(text, 'text/xml'); if (doc.querySelector('parsererror')) return null;
+  const canvas = doc.querySelector('canvas') || doc.documentElement; const frames=[]; const sections=[];
+  const STATUS = /^(new|in production|revised|approved|delivered|on hold)$/i;
+  const walk = (el, section, depth) => { for (const ch of Array.from(el.children)){ const tag=ch.tagName.toLowerCase(); const nm=ch.getAttribute('name')||'';
+      if (depth===0 && (tag==='frame'||tag==='section'||tag==='group')) { sections.push(nm); }
+      const sec = depth===0 ? nm : section;
+      if (tag==='frame'||tag==='instance'||tag==='group'||tag==='rectangle'){ const p=parseName(nm); if (p.uaid){ const st = Array.from(ch.parentElement?.children||[]).filter(x=>x.tagName.toLowerCase()==='text'&&STATUS.test(x.getAttribute('name')||'')).map(x=>x.getAttribute('name'))[0]||null;
+          frames.push({ ...p, w: Math.round(+ch.getAttribute('width')||0), h: Math.round(+ch.getAttribute('height')||0), section: depth===0 ? null : sec, status: st, nodeId: ch.getAttribute('id') }); } }
+      walk(ch, sec, depth+1); } };
+  walk(canvas, null, 0);
+  return { frames, sections };
+}
+
+/* ===================== Rules helpers ===================== */
+function platformRule(p){ const n = norm(p.platform); if (!n) return null; const list = (S.rules?.platforms)||[]; let r = list.find(x=>(x.match||[]).some(m=>norm(m)===n)); if (!r) r = list.find(x=>(x.match||[]).some(m=>n.includes(norm(m))&&norm(m).length>3)); return r||null; }
+function ctaExpectation(row, rule){
+  if (row){ const t=(row.ctaType||'').toLowerCase(); if (/no cta/.test(t) || /^no\b/.test((row.cta||'').toLowerCase())) return { kind:'none', from:'order' }; if (/on-?image/.test(t) || (row.cta && !/^(n\/a|none|no)$/i.test(row.cta))) return { kind:'text', text:row.cta, from:'order' }; }
+  if (!rule) return { kind:'unknown', from:'none' };
+  if (rule.cta==='no') return { kind:'none', from:'platform' }; if (rule.cta==='order') return { kind:'none', from:'platform', note:'none unless the order asks' };
+  if (rule.cta==='yes') return { kind:'button', from:'platform' }; if (rule.cta==='flag') return { kind:'flag', from:'platform' }; return { kind:'unknown', from:'none' };
+}
+
+/* ===================== Data checks ===================== */
+function runDataChecks(){
+  const rows = S.trackers[S.campaignId] || []; const byUaid = new Map(rows.map(r=>[r.uaid, r]));
+  const items = new Map();   // base -> item
+  const add = (p, asset, frame) => { let it = items.get(p.base); if (!it){ it = { key:p.base, name:p.base, parsed:p, uaid:p.uaid, asset:null, frame:null, row:null, rule:null, issues:[], bucket:'passed', expect:null, mockup:p.isMockup }; items.set(p.base,it); } if (asset) it.asset=asset; if (frame) it.frame=frame; return it; };
+  for (const a of S.round.assets) add(a.parsed, a, null);
+  for (const f of S.round.frames) add(f, null, f);
+  const push = (it, text, sev, src='data') => { it.issues.push({ text, sev, src }); if (sev==='changes') it.bucket='changes'; else if (sev==='check' && it.bucket!=='changes') it.bucket='check'; };
+  // duplicates
+  const seenU = new Map();
+  for (const it of items.values()){ if (it.mockup) continue; it.row = it.uaid ? byUaid.get(it.uaid)||null : null; it.rule = platformRule(it.parsed);
+    if (it.uaid){ if (seenU.has(it.uaid)) { const o=seenU.get(it.uaid); push(it, `Duplicate UAID: ${it.uaid} is also on ${o.name}.`, 'changes'); push(o, `Duplicate UAID: ${it.uaid} is also on ${it.name}.`, 'changes'); } else seenU.set(it.uaid, it); } }
+  for (const it of items.values()){
+    const p = it.parsed, row = it.row, rule = it.rule;
+    if (it.mockup){ it.bucket='reference'; if (it.uaid && !seenU.has(it.uaid)) { const d = add({ ...p, base:p.base.replace(/_m(ockup)?$/i,''), isMockup:false }, null, null); d.uaid=p.uaid; d.row=byUaid.get(p.uaid)||null; d.rule=platformRule(p); seenU.set(p.uaid, d); push(d, `The UAID sits on the mockup frame (${it.name}); the deliverable frame lacks "-${p.uaid}".`, 'changes'); } continue; }
+    if (!it.uaid){ push(it, 'No UAID at the end of the frame name.', 'changes'); continue; }
+    if (it.frame && it.frame.section===null && S.round.frames.length) push(it, 'Frame sits outside every platform section (a stray or an old round\'s reference).', 'changes');
+    if (!row){ push(it, 'UAID is not in the order rows for this campaign (not an ICP row, or the order changed after the build).', 'check'); }
+    else {
+      if (/cancel/i.test(row.studioStatus)) push(it, `Cancelled in the tracker${it.frame?.status?` but marked ${it.frame.status} on the board`:' but still on the board'}.`, /approved|delivered/i.test(it.frame?.status||'')?'changes':'check');
+      if (row.fileName){ const want = row.fileName.replace(/\.(png|jpe?g|psd|mp4|webp)$/i,''); if (norm(want)!==norm(p.base)) push(it, `Name differs from the File Naming Convention: the order says ${want}.`, 'changes'); }
+      const od = parseDims(row.dims); const nd = p.size && /x/.test(p.size) ? parseDims(p.size) : null;
+      if (od && nd && (od.w!==nd.w||od.h!==nd.h)) push(it, `The name says ${nd.w}x${nd.h}; the order says ${od.w}x${od.h}.`, 'changes');
+      const act = it.asset ? { w:it.asset.w, h:it.asset.h } : (it.frame && it.frame.w ? { w:it.frame.w, h:it.frame.h } : null);
+      if (od && act){ if (od.w!==act.w||od.h!==act.h){ const off = Math.abs(od.w-act.w)<=2 && Math.abs(od.h-act.h)<=2; push(it, off ? `Off by one: the ${it.asset?'export':'frame'} is ${act.w}x${act.h}; the order says ${od.w}x${od.h}.` : `Size is ${act.w}x${act.h}; the order says ${od.w}x${od.h}.`, 'changes'); } }
+      else if (nd && act && (nd.w!==act.w||nd.h!==act.h)) push(it, `The ${it.asset?'export':'frame'} is ${act.w}x${act.h} but the name says ${nd.w}x${nd.h}.`, 'changes');
+      const fmt = (row.format||'').toLowerCase();
+      if (it.asset && fmt){ if (/mp4|video|mov/.test(fmt)) push(it, 'The order asks for video; this is a still export.', 'check'); else if (/psd/.test(fmt)) push(it, 'The order asks for a layered PSD; an export cannot show the layers, confirm at delivery.', 'check'); else if (/jpe?g/.test(fmt) && it.asset.ext==='png' || /png/.test(fmt) && it.asset.ext==='jpg') push(it, `Export is ${it.asset.ext}; the order says ${fmt}.`, 'check'); }
+      const lim = parseLimit(row.reqs, row.addNote, row.copy); if (lim && row.copy && row.copy.length>lim) push(it, `Copy on the order is ${row.copy.length} characters against a ${lim} maximum (spaces count).`, 'changes');
+      if (/needs revision/i.test(row.assetStatus||'') && /approved|delivered/i.test(it.frame?.status||'')) push(it, `Asset Status is "${row.assetStatus}" while the board says ${it.frame.status}.`, 'check');
+    }
+    const ex = ctaExpectation(row, rule);
+    if (ex.kind==='text') push(it, `Written CTA "${ex.text}" is on the order. Confirm the platform takes a text CTA on the art.`, 'check');
+    if (ex.kind==='flag') push(it, `${rule.name}: CTAs on this placement are unconfirmed; check any CTA on the art.`, 'check');
+    if (!rule) push(it, `No placement rule for "${p.platform||'this platform'}" yet. Add it under Rules or check logo, TT and CTA by eye.`, 'check');
+    else if (rule.status==='observed' && !row) push(it, `${rule.name} placement rule is observed, not confirmed.`, 'check');
+    const reqs = (row?.reqs||'')+' '+(row?.addNote||'');
+    const reqFlags=[]; if (/round/i.test(reqs)) reqFlags.push('rounded corners'); if (/\b\d{2}\s?pt\b|font/i.test(reqs)) reqFlags.push('minimum font size'); if (/black\s*(and|&)\s*white|b&w|monochrome/i.test(reqs)) reqFlags.push('black and white'); if (/no text|no logos?/i.test(reqs)) reqFlags.push('no text or logos'); if (/upper 60|60%/i.test(reqs)) reqFlags.push('art in the upper 60%'); if (/cover/i.test(reqs)) reqFlags.push('cover count');
+    const talent = (row?.workingName||'').match(/\b(?:with|starring|feat\.?|featuring|by)\s+([A-Z][a-zA-Z'-]+(?:\s+[A-Z][a-zA-Z'-]+){0,2})/)?.[1] || (/name|talent|cast/i.test(row?.addNote||'') ? row.addNote : null);
+    it.expect = { platform: rule?.name||p.platform, logo: rule?.logo||'unknown', tt: rule?.tt||'unknown', cta: ex, reqs: reqFlags, reqText: (row?.reqs||'').slice(0,400), talent, copy: row?.copy||'', concept: row?.concept||row?.conceptFree||'', status: rule?.status||'none' };
+    if (it.bucket==='passed' && !it.asset && it.frame && reqFlags.length) push(it, `Order asks for ${reqFlags.join(', ')}; drop the export to check it visually.`, 'check');
+  }
+  // missing: ready-to-build rows with no frame or export
+  const missing=[]; for (const r of rows){ if (!isReady(r)) continue; if (seenU.has(r.uaid)) continue; missing.push({ key:'missing:'+r.uaid, name: r.fileName ? r.fileName.replace(/\.(png|jpe?g|psd|mp4)$/i,'') : `(no file name) ${r.uaid}`, uaid:r.uaid, row:r, bucket:'missing', issues:[{ text:`Ready to build in the tracker but not on this board${r.dims?` (${r.dims}${r.partner?', '+r.partner:''})`:''}.`, sev:'missing', src:'data' }], parsed:null, asset:null, frame:null, expect:null }); }
+  const list = [...items.values(), ...missing];
+  S.round.findings = list; S.round.visionDone = false;
+  return list;
+}
+
+/* ===================== Visual checks and the reviewer ===================== */
+let _sample; async function getSample(){ if (_sample!==undefined) return _sample; try { _sample = window.claude?.use ? await window.claude.use('sample') : null; } catch(e){ _sample=null; } return _sample; }
+
+/* The reviewer backend: the host viewer's review service when the page runs inside one, otherwise the app's own /api/review endpoint. */
+async function encodeImage(file){ const url=URL.createObjectURL(file); try { const im=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=url; }); const max=1568, sc=Math.min(1, max/Math.max(im.naturalWidth, im.naturalHeight)); const c=document.createElement('canvas'); c.width=Math.max(1,Math.round(im.naturalWidth*sc)); c.height=Math.max(1,Math.round(im.naturalHeight*sc)); c.getContext('2d').drawImage(im,0,0,c.width,c.height); const d=c.toDataURL('image/jpeg',0.86); return { media_type:'image/jpeg', data:d.slice(d.indexOf(',')+1) }; } finally { URL.revokeObjectURL(url); } }
+function parseLoose(text){ try { return JSON.parse(text); } catch(e){} const f=String(text).match(/```(?:json)?\s*([\s\S]*?)```/); if (f){ try { return JSON.parse(f[1]); } catch(e){} } const a=String(text).search(/[\[{]/); const b=Math.max(String(text).lastIndexOf(']'), String(text).lastIndexOf('}')); if (a>=0&&b>a){ try { return JSON.parse(String(text).slice(a,b+1)); } catch(e){} } throw { code:'invalid_json', message:'The reply held no JSON', text:String(text) }; }
+const RV = {
+  _mode: undefined, endpoint: '/api/review', caps: null,
+  get code(){ try { return localStorage.getItem('ada:access')||''; } catch(e){ return ''; } }, set code(v){ try { localStorage.setItem('ada:access', v||''); } catch(e){} },
+  async mode(){ if (this._mode!==undefined) return this._mode; const s=await getSample(); if (s){ this._mode='viewer'; return 'viewer'; } try { const r=await fetch(this.endpoint, { method:'GET' }); if (r.ok){ this.caps=await r.json().catch(()=>({})); this._mode='api'; return 'api'; } } catch(e){} this._mode=null; return null; },
+  async ready(){ return !!(await this.mode()); },
+  async limits(){ const m=await this.mode(); if (m==='viewer'){ try { return await (await getSample()).limits(); } catch(e){ return {}; } } if (m==='api') return { images:{ maxCount:4, mediaTypes:['image/png','image/jpeg','image/webp'] } }; return {}; },
+  _opts(o){ const opts={}; if (o.onText) opts.onText=o.onText; if (o.signal) opts.signal=o.signal; if (o.images) opts.images=o.images; if (o.tier) opts.modelTier=o.tier; if (o.tools) opts.tools=o.tools; if (o.cache===false) opts.cache=false; return opts; },
+  async ask(input, o={}){ const m=await this.mode(); if (m==='viewer') return await (await getSample())(input, this._opts(o)); if (m==='api') return await this._api(input, o, false); throw { code:'not_granted', message:'No reviewer available' }; },
+  async json(input, o={}){ const m=await this.mode(); if (m==='viewer') return await (await getSample()).json(input, this._opts(o)); if (m==='api'){ const { text } = await this._api(input, o, true); return parseLoose(text); } throw { code:'not_granted', message:'No reviewer available' }; },
+  async _api(input, o, json, retried){
+    const messages = typeof input==='string' ? [{ role:'user', content:input }] : input;
+    const images = o.images ? await Promise.all(Array.from(o.images).map(encodeImage)) : [];
+    let res; try { res = await fetch(this.endpoint, { method:'POST', headers:{ 'content-type':'application/json', 'x-access-code': this.code }, body: JSON.stringify({ messages, images, tier:o.tier||'default', json:!!json }), signal:o.signal }); }
+    catch(e){ if (e?.name==='AbortError') throw { code:'cancelled', message:'stopped' }; throw { code:'upstream_error', message:String(e) }; }
+    if (res.status===401){ if (!retried && await askAccessCode()) return this._api(input, o, json, true); throw { code:'not_granted', message:'This browser is not connected to the workspace yet.' }; }
+    if (res.status===429) throw { code:'rate_limited', message:'rate limited' };
+    if (!res.ok) throw { code:'upstream_error', message: await res.text().catch(()=>'') };
+    const j=await res.json(); if (!j.text) throw { code:'empty_completion', message:'empty' }; if (o.onText) o.onText({ text:j.text, delta:j.text }); return { text:j.text, truncated:!!j.truncated, modelTierApplied:o.tier||'default' };
+  }
+};
+/* The workspace connection rides inside the link people are sent (#k=…); the page keeps it in this browser. Nobody is asked to type a code. */
+function takeKey(){ try { const h=location.hash||'', q=location.search||''; const m=h.match(/(?:^#|[&#])k=([^&#]+)/)||q.match(/[?&]k=([^&#]+)/); if (m){ RV.code=decodeURIComponent(m[1]); const view=(h.replace(/(?:^#|[&#])k=[^&#]*/,'').replace(/^#?&?/,'')||'overview'); history.replaceState(null,'',location.pathname+'#'+view); } } catch(e){} }
+let accessExplained=false;
+async function askAccessCode(){ if (accessExplained) return false; accessExplained=true; await promptDlg({ title:'This browser is not connected to the workspace yet', body:'Open AdAutonomy from the link John sent you. That link carries the workspace connection, and this browser keeps it from then on. There is nothing to type.', ok:'OK' }); return false; }
+
+const ERR_COPY = { not_granted:'This browser is not connected to the workspace yet. Open AdAutonomy from the link John sent you; nothing to type.', sampling_disabled:'The reviewer is not available on this account.', rate_limited:'Too many requests just now. Try again in a minute.', images_unavailable:'This viewer cannot send images for visual checks.', image_rejected:'One of the images could not be read. Re-export it as PNG or JPG.', refused:'The reviewer declined this request.', prompt_too_large:'Too much at once. Drop fewer frames per run.', upstream_error:'The connection dropped. Run again.', empty_completion:'No answer came back. Run again.', invalid_json:'The answer was not readable. Run again.' };
+const errCopy = e => ERR_COPY[e?.code] || `Something went wrong (${e?.code||'unknown'}).`;
+let visionCtl = null;
+
+function rulesDigest(){
+  const r = S.rules||DEFAULT_RULES;
+  return `BRAND RULES (apply to every asset):\n${r.brand.map(b=>'- '+b.text).join('\n')}\n\nOUTPUT STYLE: ${r.output}`;
+}
+function visionPromptFor(batch){
+  const lines = batch.map((it,i)=>{ const e=it.expect||{}; const cta=e.cta||{};
+    const ctaTxt = cta.kind==='none' ? `no CTA on the art (${cta.from==='order'?'the order says No CTA':'platform rule'}${cta.note?', '+cta.note:''})` : cta.kind==='text' ? `a written CTA reading "${cta.text}" (order)` : cta.kind==='button' ? 'a yellow button CTA (platform rule, observed)' : cta.kind==='flag' ? 'unknown, report any CTA' : 'unknown, report what you see';
+    return `IMAGE ${i+1}: ${it.name}\n  platform: ${e.platform||it.parsed?.platform||'unknown'} (rule status: ${e.status})\n  expected Audible logo: ${e.logo}; expected title treatment: ${e.tt}; expected CTA: ${ctaTxt}\n  talent named in the order: ${e.talent||'none given'}\n  copy on the order: ${e.copy?JSON.stringify(e.copy.slice(0,200)):'none'}\n  creative concept: ${e.concept||'n/a'}\n  order requirements to verify: ${e.reqs.length?e.reqs.join(', '):'none'}${e.reqText?'\n  requirements text: '+JSON.stringify(e.reqText):''}`; }).join('\n\n');
+  return `You are a creative QC reviewer checking ad artwork for an audio-entertainment brand. Look at each image carefully and report facts, not opinions.\n\n${rulesDigest()}\n\nDEFINITIONS: "Audible logo" means the wordmark with the orange mark; the "AO badge" (Audible Original) is different and is NOT the Audible logo; "Listen on Audible" is a logo lockup variant. A yellow chevron shape on Amazon Ads banners is NOT a CTA. A safe-zone overlay (a semi-transparent guide) is never an issue, never mention it. Title treatment (TT) means the stylised title artwork.\n\n${lines}\n\nFor EACH image reply with one JSON object, as a JSON array in image order, with exactly these fields:\n{"i": <image number>, "logo": "present"|"absent"|"unsure", "logoKind": "audible"|"ao_badge"|"listen_on_audible"|"none"|"unsure", "titleTreatment": "present"|"absent"|"unsure", "cta": {"present": true|false, "text": <string or null>, "style": "button"|"text"|"none"|"unsure"}, "talentMatch": "yes"|"no"|"unsure"|"n/a", "edges": "ok"|"bar"|"unsure", "strays": [<short descriptions of stray or leftover elements, empty if none>], "copyOnArt": <the readable copy on the art, or "">, "requirements": [{"name": <requirement>, "status": "met"|"not met"|"unsure", "note": <short>}], "notes": [<anything else a QC lead should know, short>]}\nReply with only the JSON array.`;
+}
+function applyVision(it, v){
+  const e = it.expect||{}; const conf = e.status==='confirmed'; const push=(t,sev)=>{ it.issues.push({ text:t, sev, src:'vision' }); if (sev==='changes') it.bucket='changes'; else if (sev==='check'&&it.bucket!=='changes') it.bucket='check'; };
+  const logoPresent = v.logo==='present' && (v.logoKind==='audible'||v.logoKind==='listen_on_audible'||v.logoKind==='unsure');
+  if (e.logo==='yes' && v.logo==='absent') push('Audible logo is missing; this placement always carries it.', conf?'changes':'check');
+  if (e.logo==='no' && logoPresent) push(`Audible logo is on the art${v.logoKind==='listen_on_audible'?' ("Listen on Audible")':''}; this placement takes ${e.platform==='Email'||/web|app/i.test(e.platform||'')?'the AO badge or':''} no logo.`, conf?'changes':'check');
+  if (e.logo==='unknown' && logoPresent) push('Audible logo is present; no logo rule is recorded for this placement.', 'check');
+  if (e.tt==='yes' && v.titleTreatment==='absent') push('Title treatment is missing.', 'check');
+  if (e.tt==='no' && v.titleTreatment==='present') push('Title treatment is on the art; this placement is clean art.', conf?'changes':'check');
+  const cta = e.cta||{}; const vc = v.cta||{};
+  if (vc.present){ if (cta.kind==='none') push(`CTA on the art${vc.text?` ("${vc.text}")`:''}; ${cta.from==='order'?'the order says No CTA':'this placement gets none unless the order asks'}.`, conf||cta.from==='order'?'changes':'check');
+    else if (cta.kind==='text' && vc.text && norm(vc.text)!==norm(cta.text)) push(`CTA reads "${vc.text}"; the order says "${cta.text}".`, 'changes');
+    else if (vc.style==='text' && cta.kind!=='text') push(`Written CTA "${vc.text||''}" on the art; confirm this placement takes a text CTA.`, 'check');
+    else if (cta.kind==='flag'||cta.kind==='unknown') push(`CTA on the art${vc.text?` ("${vc.text}")`:''}; the rule for this placement is unconfirmed.`, 'check'); }
+  else { if (cta.kind==='text') push(`The order asks for the written CTA "${cta.text}" and it is not on the art.`, 'changes'); if (cta.kind==='button') push('No CTA button found; this placement usually carries the yellow button.', 'check'); }
+  if (v.talentMatch==='no') push(`Talent on the art does not match the order (${e.talent||'see Working Asset Name'}).`, 'changes'); else if (v.talentMatch==='unsure' && e.talent) push(`Could not confirm the talent is ${e.talent}.`, 'check');
+  if (v.edges==='bar') push('A thin bar or gap at an edge; art and background must run to the edges.', 'changes'); else if (v.edges==='unsure') push('Edge coverage unclear; check for single-pixel bars.', 'check');
+  for (const s of (v.strays||[])) if (!/safe|guide|overlay/i.test(s)) push(`Stray element: ${s}.`, 'changes');
+  for (const r of (v.requirements||[])) { if (r.status==='not met') push(`${r.name}: not met${r.note?' ('+r.note+')':''}.`, 'changes'); else if (r.status==='unsure') push(`${r.name}: could not confirm${r.note?' ('+r.note+')':''}.`, 'check'); }
+  if (e.copy && v.copyOnArt){ const a=norm(e.copy), b=norm(v.copyOnArt); if (a && b && !(b.includes(a.slice(0,Math.min(40,a.length))) || a.includes(b.slice(0,Math.min(40,b.length))))) push(`Copy on the art ("${v.copyOnArt.slice(0,80)}") differs from the order.`, 'check'); }
+  for (const n of (v.notes||[])) if (n && !/safe.?zone|overlay/i.test(n)) it.issues.push({ text:n, sev:'note', src:'vision' });
+  it.visionChecked = true; it.vision = v;
+}
+async function runVisionChecks(){
+  if (visionCtl){ visionCtl.abort(); return; }
+  if (!S.round.findings) runDataChecks();
+  if (!await RV.ready()){ toast('Visual checks need the reviewer, which is not available here'); return; }
+  const items = S.round.findings.filter(it=>it.asset && !it.mockup && it.bucket!=='missing');
+  if (!items.length){ toast('Drop frame exports first'); return; }
+  let caps=null; try { caps = await RV.limits(); } catch(e){}
+  if (!caps?.images){ toast('Images cannot be sent for visual checks here'); return; }
+  const per = Math.max(1, Math.min(caps.images.maxCount||4, 4));
+  const btn=$('#rv-run-vision'); btn.textContent='Stop'; const prog=$('#rv-prog'); prog.hidden=false; const bar=prog.querySelector('i'); const lbl=$('#rv-prog-label');
+  visionCtl = new AbortController(); let done=0; const tier=$('#rv-tier').value;
+  for (const it of items){ it.issues = it.issues.filter(x=>x.src!=='vision'); it.visionChecked=false; recomputeBucket(it); }
+  try {
+    for (let i=0;i<items.length;i+=per){ const batch=items.slice(i,i+per); lbl.textContent=`Looking at ${batch.map(b=>b.name).join(', ')} (${Math.min(i+per,items.length)} of ${items.length})`;
+      try { const res = await RV.json(visionPromptFor(batch), { images: batch.map(b=>b.asset.file), tier, signal: visionCtl.signal });
+        const arr = Array.isArray(res) ? res : (res && Array.isArray(res.results) ? res.results : [res]);
+        batch.forEach((it,k)=>{ const v = arr.find(x=>+x?.i===k+1) || arr[k]; if (v && typeof v==='object') applyVision(it, v); else it.issues.push({ text:'Visual check returned nothing for this frame.', sev:'note', src:'vision' }); });
+      } catch(e){ if (e?.code==='cancelled') break; batch.forEach(it=>it.issues.push({ text:`Visual check did not complete: ${errCopy(e)}`, sev:'note', src:'vision' })); if (['not_granted','sampling_disabled','images_unavailable','rate_limited'].includes(e?.code)){ toast(errCopy(e)); break; } }
+      done=Math.min(i+per,items.length); bar.style.width=Math.round(done/items.length*100)+'%'; renderFindings(); }
+  } finally { visionCtl=null; btn.textContent='Run visual checks'; lbl.textContent = done ? `Visual checks finished for ${done} frame${done===1?'':'s'}.` : ''; setTimeout(()=>{ prog.hidden=true; bar.style.width='0'; }, 1200); S.round.visionDone = done>0; renderFindings(); }
+}
+function recomputeBucket(it){ if (it.bucket==='missing'||it.bucket==='reference') return; it.bucket = it.issues.some(x=>x.sev==='changes') ? 'changes' : it.issues.some(x=>x.sev==='check') ? 'check' : 'passed'; }
+
+/* ---- Studio list ---- */
+function buildReport(asText=true){
+  const f = S.round.findings||[]; const camp=currentCampaign(); const round=$('#rv-round').value.trim()||'this round';
+  const groups = { changes: f.filter(x=>x.bucket==='changes'), check: f.filter(x=>x.bucket==='check'), passed: f.filter(x=>x.bucket==='passed'), missing: f.filter(x=>x.bucket==='missing') };
+  const li = it => `${it.name}: ${it.issues.filter(x=>x.sev!=='note').map(x=>x.text).join(' ')}`;
+  const passedGroups = (()=>{ const m=new Map(); for (const it of groups.passed){ const k = it.expect?.platform || it.parsed?.platform || 'Other'; m.set(k, (m.get(k)||0)+1); } return [...m.entries()].map(([k,n])=>`${k}: ${n} frame${n===1?' matches':'s match'} the order and the placement rules${S.round.visionDone?'':' (data checks only)'}.`); })();
+  if (asText){
+    const L=[]; L.push(`${camp?camp.name:'Campaign'} ${round} QC`); L.push('');
+    L.push('Changes needed'); L.push(...(groups.changes.length? groups.changes.map(it=>'- '+li(it)) : ['- None.'])); L.push('');
+    L.push('Please check'); L.push(...(groups.check.length? groups.check.map(it=>'- '+li(it)) : ['- Nothing to check.'])); L.push('');
+    L.push('Passed'); L.push(...(passedGroups.length? passedGroups.map(x=>'- '+x) : ['- No frames passed yet.'])); L.push('');
+    L.push('Not on this board'); L.push(...(groups.missing.length? groups.missing.map(it=>'- '+li(it)) : ['- Every ready-to-build row has a frame.']));
+    return L.join('\n');
+  }
+  const sec=(t,arr,empty)=>`<h5>${t}</h5><ul>${arr.length?arr.map(x=>`<li>${x}</li>`).join(''):`<li class="muted">${empty}</li>`}</ul>`;
+  return sec('Changes needed', groups.changes.map(it=>`<span class="fn">${esc(it.name)}</span>: ${esc(it.issues.filter(x=>x.sev!=='note').map(x=>x.text).join(' '))}`), 'None.')
+       + sec('Please check', groups.check.map(it=>`<span class="fn">${esc(it.name)}</span>: ${esc(it.issues.filter(x=>x.sev!=='note').map(x=>x.text).join(' '))}`), 'Nothing to check.')
+       + sec('Passed', passedGroups.map(esc), 'No frames passed yet.')
+       + sec('Not on this board', groups.missing.map(it=>`<span class="fn">${esc(it.name)}</span>: ${esc(it.issues.map(x=>x.text).join(' '))}`), 'Every ready-to-build row has a frame.');
+}
+
+/* ---- Reviewer chat ---- */
+function roundDigest(){
+  const camp=currentCampaign(); const f=S.round.findings||[]; const rows=S.trackers[S.campaignId]||[];
+  const counts = { changes:f.filter(x=>x.bucket==='changes').length, check:f.filter(x=>x.bucket==='check').length, passed:f.filter(x=>x.bucket==='passed').length, missing:f.filter(x=>x.bucket==='missing').length };
+  let list = f.filter(x=>x.bucket!=='reference').map(it=>`${it.bucket.toUpperCase()} ${it.name}${it.uaid?' ['+it.uaid+']':''}${it.issues.length?': '+it.issues.map(x=>x.text).join(' | '):''}`).join('\n'); if (list.length>9000) list = list.slice(0,9000)+'\n…(list truncated)';
+  return `Campaign: ${camp?camp.name+(camp.client?' ('+camp.client+')':''):'none selected'}; round ${$('#rv-round').value||'?'}. Order rows loaded: ${rows.length} (${rows.filter(isReady).length} in scope). Frames dropped: ${S.round.assets.length}; frames from layer XML: ${S.round.frames.length}. Visual checks run: ${S.round.visionDone?'yes':'no'}.\nCounts: ${counts.changes} changes needed, ${counts.check} please check, ${counts.passed} passed, ${counts.missing} not on this board.\n\nFINDINGS:\n${list||'(no checks run yet)'}`;
+}
+const CHAT_RULES = `You are the AdAutonomy reviewer, a creative QC assistant for a content-operations team. Speak plainly and directly, in short paragraphs or tight lists. Use file names exactly as given. Never speculate about artwork you have not been shown; if asked about a frame's visuals and the visual check has not run, say so. The order of precedence is the tracker row, then the platform rule, then the brand rule. Never call out safe-zone overlays. Do not describe yourself as a model, an assistant or a vendor's product; you are the AdAutonomy reviewer. Never use the words AI, model or assistant about yourself. If the user wants a board or sheet read, tell them to paste its link into the intake box above, or straight into this conversation; links pasted here are read automatically. Write without em dashes and without filler. When you change a finding with a tool, say what you changed in one line.`;
+function chatTools(){
+  const find = n => (S.round.findings||[]).find(it=>norm(it.name)===norm(String(n))) || (S.round.findings||[]).find(it=>norm(it.name).includes(norm(String(n))));
+  return [
+    { name:'set_bucket', description:'Move a finding to a section. bucket is one of changes, check, passed. Returns the finding after the change.', inputSchema:{ type:'object', properties:{ file:{type:'string'}, bucket:{type:'string'}, reason:{type:'string'} }, required:['file','bucket'] }, execute: ({file,bucket,reason}) => { const it=find(file); if (!it) throw new Error('No finding named '+file); const b=String(bucket); if (!['changes','check','passed'].includes(b)) throw new Error('bucket must be changes, check or passed'); it.bucket=b; it.manual=true; if (reason) it.issues.push({ text:String(reason), sev:'note', src:'reviewer' }); renderFindings(); return { name:it.name, bucket:it.bucket }; } },
+    { name:'add_note', description:'Append a short note to a finding, shown with it and in the studio list as context.', inputSchema:{ type:'object', properties:{ file:{type:'string'}, note:{type:'string'} }, required:['file','note'] }, execute: ({file,note}) => { const it=find(file); if (!it) throw new Error('No finding named '+file); it.issues.push({ text:String(note), sev:'note', src:'reviewer' }); renderFindings(); return { ok:true }; } },
+    { name:'read_link', description:'Read a Figma board, Google Sheets tab, Google Drive folder or Airtable table from its link, as if the user pasted it into the intake box. Returns right away; the frames or rows arrive in the review as they load.', inputSchema:{ type:'object', properties:{ url:{type:'string'}, tab:{type:'string'} }, required:['url'] }, execute: ({url,tab}) => { if (!detectLink(String(url))) throw new Error('Not a Figma, Google Sheets, Drive or Airtable link'); addLink(String(url), tab?String(tab):'', 'review'); return { started:true }; } },
+    { name:'get_order_row', description:'Return the tracker (order) row for a UAID: status, file name, dimensions, format, CTA, copy, talent, requirements.', inputSchema:{ type:'object', properties:{ uaid:{type:'string'} }, required:['uaid'] }, execute: ({uaid}) => { const r=(S.trackers[S.campaignId]||[]).find(x=>x.uaid===String(uaid).trim()); if (!r) throw new Error('No row for '+uaid); const { uaid:u, studioStatus, assetStatus, fileName, dims, format, ctaType, cta, copy, workingName, addNote, reqs, partner, channel, market, lang } = r; return { uaid:u, studioStatus, assetStatus, fileName, dims, format, ctaType, cta, copy, workingName, addNote, reqs: (reqs||'').slice(0,600), partner, channel, market, lang }; } }
+  ];
+}
+function addMsg(role, text){ const log=$('#ch-log'); const d=document.createElement('div'); d.className='msg '+role; d.textContent=text; log.appendChild(d); log.scrollTop=log.scrollHeight; return d; }
+async function sendChat(text){
+  text=(text||'').trim(); if (!text) return;
+  addMsg('me', text); $('#ch-in').value='';
+  const { urls } = splitLinks(text); if (urls.some(detectLink)){ addMsg('sys', `Reading ${urls.filter(detectLink).length===1?'that link':'those links'} now. The findings update as each source lands.`); await addLink(text, '', 'review'); return; }
+  if (!await RV.ready()){ addMsg('sys','The reviewer is not available here. Data checks and the studio list still work.'); return; }
+  S.chat.push({ role:'user', content:text }); const bubble=addMsg('rv','Thinking…'); const btn=$('#ch-send'); btn.disabled=true;
+  const turns = [{ role:'user', content: CHAT_RULES+'\n\nCURRENT ROUND\n'+roundDigest() }, ...S.chat.slice(-14)];
+  let caps=null; try { caps = await RV.limits(); } catch(e){}
+  const opts = { cache:false, onText:({text})=>{ bubble.textContent=text; $('#ch-log').scrollTop=$('#ch-log').scrollHeight; } };
+  if (caps?.tools) opts.tools = chatTools();
+  try { const { text:ans } = await RV.ask(turns, opts); bubble.textContent=ans; S.chat.push({ role:'assistant', content:ans }); }
+  catch(e){ bubble.textContent = e?.text || errCopy(e); if (!e?.text) bubble.classList.add('sys'); S.chat.pop(); }
+  finally { btn.disabled=false; }
+}
+$('#ch-send').addEventListener('click', ()=>sendChat($('#ch-in').value));
+$('#ch-in').addEventListener('keydown', e=>{ if (e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendChat(e.target.value); } });
+function renderSuggestions(){ if (!$('#ch-log').children.length){ RV.ready().then(ok=>{ if (!$('#ch-log').children.length) addMsg('sys', ok ? 'Ask about this round. The reviewer reads the order rows and the findings and answers in plain terms.' : 'The reviewer is not connected. Data checks, the studio list and reports still work.'); }); } const has = (S.round.findings||[]).length; const sugg = has ? ['Summarise the changes for the studio in three lines','Which findings are judgment calls and why?','Which UAIDs are still not on this board?','What should the studio fix first?'] : ['What does the Goodreads rule say?','How should I name frames for this to work?','What do you check from the files alone?']; $('#ch-sugg').innerHTML = sugg.map(s=>`<button type="button">${esc(s)}</button>`).join(''); $$('#ch-sugg button').forEach(b=>b.onclick=()=>sendChat(b.textContent)); }
+
+/* ===================== Intake (drag and drop, file picker) ===================== */
+function wireDrop(zoneId, inputId, onFiles){
+  const z=$(zoneId), inp=$(inputId);
+  z.addEventListener('click', e=>{ if (e.target.tagName!=='INPUT') inp.click(); });
+  z.addEventListener('keydown', e=>{ if (e.key==='Enter'||e.key===' '){ e.preventDefault(); inp.click(); } });
+  ['dragenter','dragover'].forEach(ev=>z.addEventListener(ev, e=>{ e.preventDefault(); z.classList.add('over'); }));
+  ['dragleave','drop'].forEach(ev=>z.addEventListener(ev, e=>{ e.preventDefault(); z.classList.remove('over'); }));
+  z.addEventListener('drop', async e=>{ const items=Array.from(e.dataTransfer?.items||[]); const entries=items.map(i=>i.webkitGetAsEntry?i.webkitGetAsEntry():null).filter(Boolean);
+    if (entries.some(en=>en.isDirectory)){ const fs=[]; const readAll = (dir, path) => new Promise(res=>{ const r=dir.createReader(); const out=[]; const batch=()=>r.readEntries(async ents=>{ if (!ents.length){ for (const en of out){ if (en.isFile){ await new Promise(ok=>en.file(f=>{ if (!/^\./.test(f.name) && !/(^|\/)(_old|old |_internal|internal|mockups?)/i.test(path)) fs.push(f); ok(); })); } else await readAll(en, path+en.name+'/'); } res(); } else { out.push(...ents); batch(); } }); batch(); });
+      for (const en of entries){ if (en.isDirectory) await readAll(en, en.name+'/'); else await new Promise(ok=>en.file(f=>{ fs.push(f); ok(); })); }
+      if (fs.length) onFiles(fs); else toast('That folder had no files I can use'); return; }
+    const fs=Array.from(e.dataTransfer?.files||[]); if (fs.length){ onFiles(fs); return; }
+    const txt=(e.dataTransfer?.getData('text/uri-list')||e.dataTransfer?.getData('text/plain')||'').trim(); if (/https?:\/\//.test(txt)) addLink(txt, '', zoneId.startsWith('#ov')?'overview':zoneId.startsWith('#rv')?'review':'campaign'); });
+  inp.addEventListener('change', ()=>{ const fs=Array.from(inp.files||[]); inp.value=''; if (fs.length) onFiles(fs); });
+}
+function loadImage(file){ return new Promise(res=>{ const url=URL.createObjectURL(file); const im=new Image(); im.onload=()=>res({ url, w:im.naturalWidth, h:im.naturalHeight }); im.onerror=()=>res({ url, w:0, h:0 }); im.src=url; }); }
+async function intake(files, from, via='file'){
+  let imgs=0, xml=0, trk=0;
+  for (const f of files){ const n=f.name.toLowerCase();
+    if (/\.(png|jpe?g|webp|gif)$/.test(n)){ const p=parseName(f.name); const { url, w, h } = await loadImage(f); const i = S.round.assets.findIndex(a=>a.parsed.base===p.base); const asset={ file:f, name:f.name, parsed:p, url, w, h, ext:p.ext, figma:f.figma||null, via }; if (i>=0){ URL.revokeObjectURL(S.round.assets[i].url); S.round.assets[i]=asset; } else S.round.assets.push(asset); imgs++; }
+    else if (n.endsWith('.xml')){ const r = parseLayerXML(await f.text()); if (r){ S.round.frames = r.frames; S.round.sections = r.sections; S.round.xmlName=f.name; xml++; } else toast(`${f.name} is not a Figma layer export`); }
+    else if (/\.(csv|xlsx|xlsm)$/.test(n)){ await importTracker(f); trk++; }
+    else toast(`Skipped ${f.name}: not an image, tracker or layer XML`); }
+  if (imgs||xml){ S.round.findings=null; S.round.visionDone=false; const c=currentCampaign(); if (c && imgs && via==='file'){ c.sources=(c.sources||[]).filter(x=>!(x.kind==='frames'&&x.via==='file')); c.sources.push({ kind:'frames', label:`${imgs} export${imgs===1?'':'s'} dropped`, count:imgs, at:Date.now(), via:'file' }); Store.save('campaigns', c); } }
+  if (from==='overview') go('review'); else { renderReview(); }
+  if (imgs||xml){ runDataChecks(); renderFindings(); }
+  const parts=[]; if (imgs) parts.push(`${imgs} frame${imgs===1?'':'s'}${via==='figma'?' from the board':via==='drive'?' from Drive':''}`); if (xml) parts.push('the layer XML'); if (trk) parts.push('the order'); if (parts.length) toast('Read '+parts.join(', '));
+  renderReview();
+}
+async function importTracker(file){
+  let tabs; try { tabs = await parseTrackerFile(file); } catch(e){ toast(e.message||'Could not read the tracker'); return; }
+  if (!tabs.length){ toast('No tab with a UAID header row was found'); return; }
+  let camp = currentCampaign();
+  if (!camp){ camp = await Store.save('campaigns', { id:uid(), name: tabs[0].name.replace(/\.csv$/i,''), client:'', job:'', prefix:'', figma:'', market:'', createdAt:Date.now(), sources:[] }); S.campaignId=camp.id; ls('ada:lastCampaign', camp.id); }
+  let tab = tabs[0];
+  if (tabs.length>1){ const key=[camp.job, camp.prefix, camp.name].filter(Boolean).map(norm); tab = tabs.find(t=>key.some(k=>k && norm(t.name).includes(k))) || tabs.slice().sort((a,b)=>b.rows.length-a.rows.length)[0]; S.pendingTabs = tabs; }
+  else S.pendingTabs = null;
+  await applyTab(camp, tab, file.name);
+}
+async function applyTab(camp, tab, fileName, source){
+  await Store.saveTracker(camp.id, tab.rows);
+  camp.sources = (camp.sources||[]).filter(x=>x.kind!=='order');
+  camp.sources.push({ kind:'order', label: source?.label || `${fileName||'file'}${tab.name && tab.name!==fileName ? ' · '+tab.name : ''}`, url: source?.url||null, tab: source?.tab||tab.name||null, count: tab.rows.length, at: Date.now(), via: source?.via||'file' });
+  camp.trackerName = `${fileName||''}${tab.name && tab.name!==fileName ? ' · '+tab.name : ''}`; camp.trackerRows = tab.rows.length; camp.trackerReady = tab.rows.filter(isReady).length; camp.trackerAt = Date.now();
+  if (!camp.prefix){ const fn = tab.rows.find(r=>r.fileName)?.fileName; if (fn) camp.prefix = fn.split('_')[0]; }
+  await Store.save('campaigns', camp); if (S.round.assets.length||S.round.frames.length){ runDataChecks(); }
+  toast(`Order loaded: ${tab.rows.length} ICP rows from ${tab.name}`); renderCampaignDetail(); renderReview();
+}
+wireDrop('#ov-drop','#ov-file', fs=>intake(fs,'overview'));
+wireDrop('#rv-drop','#rv-file', fs=>intake(fs,'review'));
+wireDrop('#cd-drop','#cd-file', fs=>intake(fs,'campaign'));
+
+/* ===================== Links: Google Sheets, Airtable, Drive folders, Figma ===================== */
+function promptDlg({ title, body, options, label, input, placeholder, ok='Continue' }){
+  return new Promise(res=>{ const d=$('#dlg-prompt'); $('#dp-title').textContent=title; $('#dp-body').textContent=body||''; const sw=$('#dp-selwrap'), iw=$('#dp-inwrap');
+    sw.hidden=!options; iw.hidden=!input; if (options){ $('#dp-sellabel').textContent=label||'Choose'; $('#dp-select').innerHTML=options.map(o=>`<option>${esc(o)}</option>`).join(''); } if (input){ $('#dp-inlabel').textContent=label||'Value'; $('#dp-input').value=''; $('#dp-input').placeholder=placeholder||''; $('#dp-input').type = input==='secret'?'password':'text'; }
+    $('#dp-ok').textContent=ok; const done=v=>{ d.close(); res(v); }; $('#dp-ok').onclick=()=>done(options? $('#dp-select').value : ($('#dp-input').value.trim()||null)); $('#dp-cancel').onclick=()=>done(null); d.onclose=()=>res(null); d.showModal(); });
+}
+async function apiPost(path, body, headers={}, retried){
+  let r; try { r = await fetch(path, { method:'POST', headers:{ 'content-type':'application/json', 'x-access-code': RV.code, ...headers }, body: JSON.stringify(body) }); }
+  catch(e){ throw { code:'offline', message:'Could not reach the workspace. Check the connection and try again.' }; }
+  const tag = j => { if (j && j.error && !j.code) j.code=j.error; return j; };
+  if (r.status===401){ let j=null; try { j=await r.clone().json(); } catch(e){} if (j?.error) throw tag(j); if (!retried && await askAccessCode()) return apiPost(path, body, headers, true); throw { code:'not_granted', message:'This browser is not connected to the workspace yet. Open AdAutonomy from the link John sent you.' }; }
+  let j; try { j = await r.json(); } catch(e){ throw { code:'bad_reply', message:`The workspace answered ${r.status} without details.` }; }
+  if (!r.ok) throw tag(j); return j;
+}
+function detectLink(url){ if (/docs\.google\.com\/spreadsheets/.test(url)) return 'sheet'; if (/airtable\.com\//.test(url)) return 'airtable'; if (/drive\.google\.com\//.test(url)) return 'drive'; if (/figma\.com\/(design|file|board|proto)/.test(url)) return 'figma'; return null; }
+function splitLinks(text){ const urls=(String(text||'').match(/https?:\/\/[^\s,;"'<>()\]\[]+/g)||[]).map(u=>u.replace(/[.,;:!?)]+$/,'')); let rest=String(text||''); for (const u of urls) rest=rest.replace(u,' '); rest=rest.replace(/\b(go to|look at|read|use|open|check|then|and|the|this|that|in|on|from|please|tab|sheet|board|link|links|figma|google|sheets|document|workbook|against|compare|review|what was made|is|a|an|to|my|our|at|with|for|it)\b/gi,' ').replace(/[^\w\s&().-]/g,' ').replace(/\s+/g,' ').trim(); return { urls:[...new Set(urls)], tabHint: rest.length>0 && rest.length<=40 ? rest : '' }; }
+async function ensureCampaign(name){ let c=currentCampaign(); if (c) return c; c=await Store.save('campaigns', { id:uid(), name: name||'New campaign', client:'', job:'', prefix:'', figma:'', market:'', createdAt:Date.now(), sources:[] }); S.campaignId=c.id; ls('ada:lastCampaign', c.id); return c; }
+async function addLink(text, tab, from){
+  const { urls, tabHint } = splitLinks(text); tab=(tab||'').trim()||tabHint;
+  if (!urls.length){ toast('Paste a link first: the Figma board, the Google Sheet, a Drive folder or an Airtable table.'); return; }
+  const known=urls.filter(detectLink), unknown=urls.filter(u=>!detectLink(u));
+  if (unknown.length) toast(`Skipped ${unknown.length} link${unknown.length===1?'':'s'} I do not recognise. Figma, Google Sheets, Google Drive and Airtable links work.`);
+  if (!known.length) return;
+  // Orders first so the board is checked against them as soon as it lands.
+  const rank=k=>k==='sheet'||k==='airtable'?0:k==='drive'?1:2;
+  const list=known.map(u=>({ u, k:detectLink(u) })).sort((a,b)=>rank(a.k)-rank(b.k));
+  if (list.length>1) toast(`Reading ${list.length} links: ${list.map(x=>x.k==='sheet'?'the sheet':x.k==='airtable'?'the Airtable table':x.k==='drive'?'the Drive folder':'the Figma board').join(', ')}…`);
+  for (const p of ['ov','rv','cd']){ const li=$('#'+p+'-link'), ti=$('#'+p+'-tab'); if (li) li.value=''; if (ti) ti.value=''; }
+  for (const { u, k } of list){
+    if (k==='figma') await loadFigmaBoard(u, from);
+    else if (k==='drive') await loadDriveFolder(u, from);
+    else await loadOrderLink(u, tab, from);
+  }
+}
+async function loadFigmaBoard(url, from){
+  toast('Opening the board…');
+  const headers={}; const savedTok=ls('ada:figma'); if (savedTok) headers['x-figma-token']=savedTok;
+  let res; try { res = await apiPost('/api/figma', { url, action:'list' }, headers); }
+  catch(e){
+    if (e.code==='figma_token_required'){ await promptDlg({ title:'Board reading is not switched on yet', body:'This workspace has no Figma connection yet, so the board cannot be opened from a link. John sets that up once on the site; nothing is needed from you. In the meantime, drop the exported frames (PNG or JPG) here and the review runs the same way.', ok:'OK' }); return; }
+    if (e.code==='figma_denied' || e.code==='figma_not_found'){ await promptDlg({ title:'The board is not open to the workspace', body:e.message||'The workspace cannot see this board.', ok:'OK' }); return; }
+    toast(e.message||'Could not read that board'); return; }
+  const pages=res.pages||[]; const all=pages.flatMap(p=>p.frames.map(f=>({ ...f, page:p.name, pageId:p.id })));
+  if (!all.length){ toast(`${res.name||'That board'} has no frames I can read${res.scoped?' under "'+res.scoped+'"':''}.`); return; }
+  const withU=all.filter(f=>parseName(f.name).uaid); const platforms=new Set(withU.map(f=>parseName(f.name).platform).filter(Boolean));
+  const skipRe=/(^|\b)(_?old|archive|mockups?|reference|internal|scratch|templates?|components?|cover|wip|parking)/i;
+  $('#dd-title').textContent=res.name||'Figma board';
+  $('#dd-summary').innerHTML = `<b>${esc(res.name||'The board')}</b> has <b>${all.length}</b> frame${all.length===1?'':'s'} on ${pages.length} page${pages.length===1?'':'s'}${res.scoped?` (looking only at "${esc(res.scoped)}")`:''}; <b>${withU.length}</b> carry a UAID in the frame name${platforms.size?` across ${platforms.size} placement${platforms.size===1?'':'s'} (${esc([...platforms].slice(0,8).join(', '))}${platforms.size>8?'…':''})`:''}.${res.lastModified?` Last edited ${fmtDT(Date.parse(res.lastModified))}.`:''} The frames are rendered straight from the board, so what you review is what is on it right now.`;
+  $('#dd-hint').textContent='Tick the pages to review. Pages that look like archives, mockups or scratch are unticked.';
+  $('#dd-tree').innerHTML = pages.map((p,i)=>{ const u=p.frames.filter(f=>parseName(f.name).uaid).length; const skip=skipRe.test(p.name)||!p.frames.length; return `<li class="${skip?'skip':''}"><input type="checkbox" id="dd-f${i}" data-page="${esc(p.id)}" ${skip||!u?'':'checked'}><label for="dd-f${i}" style="min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(p.name)}</label><span class="n">${p.frames.length} frame${p.frames.length===1?'':'s'}${u?' · '+u+' with UAID':''}</span></li>`; }).join('');
+  $('#dd-opt').hidden=false; $('#dd-all').checked=false; $('#dd-optlabel').textContent='Also load frames without a UAID in the name (mockups, references, scratch)';
+  $('#dd-status').textContent=''; $('#dd-prog').hidden=true; const d=$('#dlg-drive'); $('#dd-load').disabled=false; $('#dd-load').textContent='Review these frames';
+  $('#dd-cancel').onclick=()=>d.close();
+  $('#dd-load').onclick=async ()=>{
+    const picked=new Set($$('#dd-tree input:checked').map(i=>i.dataset.page)); const allNames=$('#dd-all').checked;
+    const frames=all.filter(f=>picked.has(f.pageId) && (allNames || parseName(f.name).uaid || /(_|\b)(mockup|m)$/i.test(f.name)));
+    if (!frames.length){ $('#dd-status').textContent='Nothing to load on the ticked pages.'; return; }
+    $('#dd-load').disabled=true; $('#dd-prog').hidden=false; const bar=$('#dd-prog i'); let done=0; const out=[]; const batches=[]; for (let i=0;i<frames.length;i+=20) batches.push(frames.slice(i,i+20));
+    $('#dd-status').textContent=`Asking Figma to render ${frames.length} frame${frames.length===1?'':'s'}…`;
+    const fetchImg = async (imgUrl) => { try { const r=await fetch(imgUrl); if (r.ok) return await r.blob(); } catch(e){} const r=await fetch(`/api/figma?img=${encodeURIComponent(imgUrl)}`, { headers:{ 'x-access-code': RV.code } }); if (!r.ok) throw new Error('image '+r.status); return r.blob(); };
+    const fileName = f => { const last=f.name.split('/').pop().trim(); const nm = f.name.includes('/') && parseName(last).uaid ? last : f.name.replace(/\//g,'_').trim(); return nm.replace(/[\\:*?"<>|]/g,'_')+'.png'; };
+    const queue=batches.slice(); let failed=0;
+    const worker=async()=>{ while(queue.length){ const b=queue.shift(); let imgs={}; try { imgs=(await apiPost('/api/figma', { url, action:'render', ids:b.map(f=>f.id), scale:1, format:'png' }, headers)).images||{}; } catch(e){ console.warn('figma render', e); failed+=b.length; done+=b.length; continue; }
+        for (const f of b){ const iu=imgs[f.id]; if (!iu){ failed++; } else { try { const blob=await fetchImg(iu); const file=new File([blob], fileName(f), { type:'image/png' }); file.figma={ id:f.id, w:f.w, h:f.h, page:f.page, section:f.section, fileKey:res.fileKey, name:f.name }; out.push(file); } catch(e){ console.warn('figma image', f.name, e); failed++; } } done++; bar.style.width=Math.round(done/frames.length*100)+'%'; $('#dd-status').textContent=`Rendered ${done} of ${frames.length}…`; } } };
+    await Promise.all([0,1,2].map(worker));
+    $('#dd-load').disabled=false; d.close(); $('#dd-opt').hidden=true; $('#dd-load').textContent='Load'; $('#dd-hint').textContent='Tick the folders to load. Old deliveries, internal and mockup folders are unticked.';
+    if (failed) toast(`${failed} frame${failed===1?'':'s'} could not be rendered by Figma; the rest loaded.`);
+    if (!out.length) return;
+    const camp=await ensureCampaign(res.name);
+    camp.figma=url; camp.sources=(camp.sources||[]).filter(x=>!(x.kind==='frames'&&x.via==='figma') && x.kind!=='reference'); camp.sources.push({ kind:'frames', label:`Figma · ${res.name||'board'}`, url, count: out.length, at:Date.now(), via:'figma', platforms:[...platforms], pages: pages.filter(p=>picked.has(p.id)).map(p=>p.name), edited: res.lastModified||null }); await Store.save('campaigns', camp);
+    await intake(out, from, 'figma');
+  };
+  d.showModal();
+}
+async function loadOrderLink(url, tab, from, airtableToken){
+  toast('Reading the order…');
+  const headers={}; const savedTok = ls('ada:airtable'); if (airtableToken || savedTok) headers['x-airtable-token']=airtableToken||savedTok;
+  let res; try { res = await apiPost('/api/sheet', { url, tab }, headers); }
+  catch(e){ if (e.code==='airtable_token_required' || e.code==='airtable_denied'){ const t=await promptDlg({ title:'Airtable token', body:'Reading an Airtable table needs a personal access token with data.records:read on that base. It is kept in this browser only.', input:'secret', label:'Token', placeholder:'pat…' }); if (t){ ls('ada:airtable', t); return loadOrderLink(url, tab, from, t); } return; }
+    if (e.code==='no_such_tab' && /This workbook has: /.test(e.message||'')){ const tabs=e.message.split('This workbook has: ')[1].replace(/\.$/,'').split(', '); const pick=await promptDlg({ title:'Which tab?', body:`No tab matched "${tab}".`, options:tabs, label:'Tab' }); if (pick) return loadOrderLink(url, pick, from); return; }
+    toast(e.message||'Could not read that link'); return; }
+  const t = tableToRows(res.rows||[]);
+  if (!t){ if (res.tabs && res.tabs.length>1){ const pick=await promptDlg({ title:'Which tab holds the order?', body:`"${res.tab}" has no UAID header. Pick the tab with the order rows.`, options:res.tabs.filter(x=>x!==res.tab), label:'Tab' }); if (pick) return loadOrderLink(url, pick, from); return; } toast(`"${res.tab}" has no row with a UAID header. Try the tab name in the Tab field.`); return; }
+  if (!t.rows.length){ toast(`"${res.tab}" has a UAID header but no ICP rows.`); return; }
+  const camp=await ensureCampaign(res.title || res.tab);
+  const label = res.source==='airtable' ? `Airtable ${res.title}${res.tab?' · '+res.tab:''}` : `${res.title||'Google Sheet'} · ${res.tab}`;
+  await applyTab(camp, { name: res.tab, rows: t.rows }, res.title||label, { label, url, tab: res.tab, via: res.source });
+  S.pendingTabs = res.tabs ? res.tabs.map(n=>({ name:n, rows: n===res.tab ? t.rows : null, url })) : null;
+  if (S.round.assets.length||S.round.frames.length){ runDataChecks(); renderFindings(); }
+  if (from==='overview') go('review'); else renderReview();
+}
+async function loadDriveFolder(url, from){
+  toast('Looking in the folder…');
+  let res; try { res = await apiPost('/api/drive', { url }); } catch(e){ toast(e.message||'Could not read that folder'); return; }
+  const isImg=f=>/\.(png|jpe?g|webp|gif)$/i.test(f.name);
+  const byFolder=new Map(); for (const f of res.files){ const k=f.path||'/'; if (!byFolder.has(k)) byFolder.set(k,{ images:0, trackers:0, xml:0, sheets:0 }); const b=byFolder.get(k); if (isImg(f)) b.images++; else if (/\.(csv|xlsx|xlsm)$/i.test(f.name)) b.trackers++; else if (/\.xml$/i.test(f.name)) b.xml++; if (f.sheet) b.sheets++; }
+  const skipRe=/(^|\/)(_?old|_?internal|mockups?|_?archive|reference)/i;
+  const folders=[...byFolder.entries()].sort((a,b)=>a[0].localeCompare(b[0]));
+  const totalImgs=res.files.filter(isImg).length; const uaidImgs=res.files.filter(f=>isImg(f) && parseName(f.name).uaid).length;
+  const platforms=new Set(res.files.filter(f=>parseName(f.name).uaid).map(f=>parseName(f.name).platform).filter(Boolean));
+  const deliveries=res.folders.filter(p=>/deliver/i.test(p)).map(p=>p.replace(/\/$/,'').split('/').pop());
+  const newest=Math.max(0,...res.files.map(f=>Date.parse(f.modified||0)||0));
+  const sheets=res.files.filter(f=>f.sheet||/\.(csv|xlsx|xlsm)$/i.test(f.name));
+  $('#dd-title').textContent=res.folder||'Drive folder';
+  $('#dd-summary').innerHTML = `<b>${esc(res.folder)}</b> holds <b>${totalImgs}</b> image${totalImgs===1?'':'s'} in ${res.folders.length} folder${res.folders.length===1?'':'s'}; <b>${uaidImgs}</b> carry a UAID in the file name${platforms.size?` across ${platforms.size} placement${platforms.size===1?'':'s'} (${esc([...platforms].slice(0,8).join(', '))}${platforms.size>8?'…':''})`:''}.${deliveries.length?` Delivery folders: ${esc(deliveries.join(', '))}.`:''}${sheets.length?` ${sheets.length} spreadsheet${sheets.length===1?'':'s'} found${sheets.some(f=>f.sheet)?' (Google Sheets are read through their own link)':''}.`:''}${newest?` Newest file ${fmtDate(newest)}.`:''}${res.truncated?' The folder is large; only the first 1,500 files were listed.':''}`;
+  $('#dd-tree').innerHTML = folders.map(([k,b],i)=>{ const skip=skipRe.test(k); return `<li class="${skip?'skip':''}"><input type="checkbox" id="dd-f${i}" data-path="${esc(k)}" ${skip||(!b.images&&!b.trackers&&!b.xml)?'':'checked'}><label for="dd-f${i}" class="mono" style="min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(k==='/'?'(top level)':k)}</label><span class="n">${b.images?b.images+' img':''}${b.trackers?' · '+b.trackers+' sheet':''}${b.xml?' · xml':''}${b.sheets?' · '+b.sheets+' gsheet':''}</span></li>`; }).join('') || '<li class="muted">No usable files.</li>';
+  $('#dd-status').textContent=''; $('#dd-prog').hidden=true; const d=$('#dlg-drive');
+  $('#dd-cancel').onclick=()=>d.close();
+  $('#dd-load').onclick=async ()=>{
+    const picked=new Set($$('#dd-tree input:checked').map(i=>i.dataset.path)); const files=res.files.filter(f=>picked.has(f.path||'/') && !f.sheet);
+    if (!files.length){ $('#dd-status').textContent='Nothing ticked.'; return; }
+    $('#dd-load').disabled=true; $('#dd-prog').hidden=false; const bar=$('#dd-prog i'); let done=0; const out=[]; const queue=files.slice();
+    const worker=async()=>{ while(queue.length){ const f=queue.shift(); try { const r=await fetch(`/api/drive?file=${encodeURIComponent(f.id)}`, { headers:{ 'x-access-code': RV.code } }); if (!r.ok) throw new Error(r.status); const b=await r.blob(); out.push(new File([b], f.name, { type: b.type||f.mimeType||'' })); } catch(e){ console.warn('drive file', f.name, e); } done++; bar.style.width=Math.round(done/files.length*100)+'%'; $('#dd-status').textContent=`Fetched ${done} of ${files.length}…`; } };
+    await Promise.all([0,1,2,3].map(worker));
+    $('#dd-load').disabled=false; d.close();
+    const camp=await ensureCampaign(res.folder);
+    camp.driveFolder=url; camp.sources=(camp.sources||[]).filter(x=>!(x.kind==='frames'&&x.via==='drive')); camp.sources.push({ kind:'frames', label:`Drive · ${res.folder}`, url, count: out.filter(isImg).length, at:Date.now(), via:'drive', platforms:[...platforms], deliveries }); await Store.save('campaigns', camp);
+    await intake(out, from, 'drive');
+  };
+  $('#dd-opt').hidden=true; $('#dd-load').textContent='Load'; $('#dd-hint').textContent='Tick the folders to load. Old deliveries, internal and mockup folders are unticked.';
+  d.showModal();
+}
+for (const p of ['ov','rv','cd']){ const go_=()=>addLink($('#'+p+'-link').value, $('#'+p+'-tab').value, p==='ov'?'overview':p==='rv'?'review':'campaign'); $('#'+p+'-go').addEventListener('click', go_); $('#'+p+'-link').addEventListener('keydown', e=>{ if (e.key==='Enter'){ e.preventDefault(); go_(); } }); }
+async function refreshSource(src){ if (src.kind==='order' && src.url) return loadOrderLink(src.url, src.tab, 'campaign'); if (src.kind==='frames' && src.via==='figma' && src.url) return loadFigmaBoard(src.url, 'campaign'); if (src.kind==='reference' && src.url && detectLink(src.url)==='figma') return loadFigmaBoard(src.url, 'campaign'); if (src.kind==='frames' && src.url) return loadDriveFolder(src.url, 'campaign'); toast('That source came from a dropped file; drop it again to refresh.'); }
+
+
+/* ===================== Review view ===================== */
+function renderReview(){
+  const rows=S.trackers[S.campaignId]||[]; const ready=rows.filter(isReady);
+  $('#rv-stat').innerHTML = [`<span class="pill ${S.round.assets.length?'accent':''}">${S.round.assets.length} export${S.round.assets.length===1?'':'s'}</span>`, `<span class="pill ${S.round.frames.length?'accent':''}">${S.round.frames.length} XML frame${S.round.frames.length===1?'':'s'}</span>`, `<span class="pill ${rows.length?'ok':'warn'}">${rows.length} order rows · ${ready.length} ready</span>`].join('');
+  $('#rv-chips').innerHTML = [...S.round.assets.map(a=>`<span class="chip" title="${esc(a.name)}"><span class="mono">${esc(a.parsed.base)}</span><button class="x" data-rm="${esc(a.parsed.base)}" aria-label="Remove">×</button></span>`), S.round.xmlName?`<span class="chip"><span>${esc(S.round.xmlName)}</span><button class="x" data-rmxml aria-label="Remove">×</button></span>`:''].join('');
+  $$('#rv-chips [data-rm]').forEach(b=>b.onclick=()=>{ const i=S.round.assets.findIndex(a=>a.parsed.base===b.dataset.rm); if (i>=0){ URL.revokeObjectURL(S.round.assets[i].url); S.round.assets.splice(i,1); } S.round.findings=null; renderReview(); if (S.round.assets.length||S.round.frames.length){ runDataChecks(); } renderFindings(); });
+  const bx=$('#rv-chips [data-rmxml]'); if (bx) bx.onclick=()=>{ S.round.frames=[]; S.round.xmlName=null; S.round.findings=null; renderReview(); if (S.round.assets.length) runDataChecks(); renderFindings(); };
+  if (!$('#rv-reviewer').value && S.me) $('#rv-reviewer').value=S.me;
+  renderOrderRows(); renderFindings(); renderSuggestions();
+}
+function renderOrderRows(){
+  const el=$('#rv-order'); const rows=S.trackers[S.campaignId]||[]; const ready=rows.filter(isReady);
+  if (!rows.length){ el.innerHTML = `<div class="empty">No order loaded for this campaign. Drop the tracker, or paste its Google Sheets or Airtable link, in the box above.</div>`; return; }
+  const present = new Set([...S.round.assets.map(a=>a.parsed.uaid), ...S.round.frames.map(f=>f.uaid)].filter(Boolean));
+  el.innerHTML = `<table class="tbl"><thead><tr><th></th><th>UAID</th><th>Size</th><th>Placement</th></tr></thead><tbody>${ready.slice(0,400).map(r=>`<tr><td><span class="pill ${present.has(r.uaid)?'ok':''}" style="padding:2px 6px"><span class="d"></span></span></td><td class="mono">${esc(r.uaid)}</td><td class="num">${esc(r.dims||'')}</td><td>${esc(r.partner||r.subChannel||r.channel||'')}</td></tr>`).join('')}</tbody></table>${ready.length>400?`<p class="small muted">Showing 400 of ${ready.length}.</p>`:''}<p class="small muted" style="margin:8px 0 0">${ready.length} rows in scope, ${present.size} with a frame on this round. Green dot = frame present.</p>`;
+}
+const BUCKET_META = { changes:['Changes needed','crit'], check:['Please check','warn'], passed:['Passed','ok'], missing:['Not on this board','neutral'], reference:['Reference and mockup frames','neutral'] };
+function renderFindings(){
+  const f=S.round.findings; const el=$('#rv-findings');
+  $('#tab-n-a').textContent = S.round.assets.length? S.round.assets.length : '';
+  if (!f){ el.innerHTML = `<div class="empty">${S.round.assets.length||S.round.frames.length?'Run the data checks to match frames to the order.':'Drop frame exports (and the tracker, if this campaign has none yet) to begin. Data checks run on their own; visual checks run when you ask.'}</div>`; $('#tab-n-f').textContent=''; renderAssetGrid(); $('#rv-report').innerHTML = `<p class="muted">The studio list appears here after the checks run.</p>`; return; }
+  const counts = {}; for (const b of Object.keys(BUCKET_META)) counts[b]=f.filter(x=>x.bucket===b).length;
+  $('#tab-n-f').textContent = counts.changes+counts.check;
+  const sev = s => s==='changes'?'crit':s==='check'?'warn':s==='note'?'':'ok';
+  const card = it => `<div class="find ${BUCKET_META[it.bucket][1]} ${it.done?'done':''}" data-k="${esc(it.key)}">
+      <div class="th">${it.asset?`<img src="${it.asset.url}" alt="">`:(it.frame?'<span>frame</span>':'<span>no file</span>')}</div>
+      <div style="min-width:0"><div class="fn">${esc(it.name)}</div>
+        ${it.issues.length?`<ul class="iss">${it.issues.map(x=>`<li>${esc(x.text)}${x.src==='vision'?' <span class="pill" style="font-size:10px;padding:0 6px">visual</span>':x.src==='reviewer'?' <span class="pill" style="font-size:10px;padding:0 6px">reviewer</span>':''}</li>`).join('')}</ul>` : `<div class="small muted">${S.round.visionDone&&it.visionChecked?'Matches the order and the placement rules; logo, TT and CTA as expected.':'Matches the order on name, size and format. Visual checks not run yet.'}</div>`}
+        <div class="src">${it.expect?`<span class="pill">${esc(it.expect.platform||'')}</span>`:''}${it.asset?`<span class="pill num">${it.asset.w}×${it.asset.h}</span>`:''}${it.uaid?`<span class="pill mono" style="font-size:11px">${esc(it.uaid)}</span>`:''}${it.row?.studioStatus?`<span class="pill">${esc(it.row.studioStatus)}</span>`:''}${it.frame?.status?`<span class="pill">board: ${esc(it.frame.status)}</span>`:''}</div></div>
+      <div class="act">${it.bucket!=='missing'&&it.bucket!=='reference'?`<select class="input" data-mv aria-label="Move to section" style="padding:4px 6px;font-size:12px"><option value="changes" ${it.bucket==='changes'?'selected':''}>Changes needed</option><option value="check" ${it.bucket==='check'?'selected':''}>Please check</option><option value="passed" ${it.bucket==='passed'?'selected':''}>Passed</option></select>`:''}<button class="btn sm" data-cp>Copy line</button>${it.bucket==='changes'||it.bucket==='check'?`<button class="btn sm ghost" data-done>${it.done?'Reopen':'Fixed'}</button>`:''}</div></div>`;
+  const order=['changes','check','missing','passed','reference'];
+  el.innerHTML = order.filter(b=>counts[b]).map(b=>`<div class="bucket ${BUCKET_META[b][1]}"><h4><span class="d"></span>${BUCKET_META[b][0]} <span class="num muted" style="font-weight:500;letter-spacing:0;text-transform:none">${counts[b]}</span></h4>${f.filter(x=>x.bucket===b).map(card).join('')}</div>`).join('') || `<div class="empty">Nothing to report.</div>`;
+  $$('#rv-findings .find').forEach(c=>{ const it=f.find(x=>x.key===c.dataset.k); c.querySelector('[data-mv]')?.addEventListener('change', e=>{ it.bucket=e.target.value; it.manual=true; renderFindings(); }); c.querySelector('[data-cp]').onclick=()=>copyText(`${it.name}: ${it.issues.filter(x=>x.sev!=='note').map(x=>x.text).join(' ')}`.trim()); c.querySelector('[data-done]')?.addEventListener('click', ()=>{ it.done=!it.done; renderFindings(); }); });
+  renderAssetGrid(); $('#rv-report').innerHTML = buildReport(false);
+}
+function renderAssetGrid(){
+  const el=$('#rv-assets'); const f=S.round.findings||[];
+  if (!S.round.assets.length){ el.innerHTML=`<div class="empty">No exports dropped yet.</div>`; return; }
+  el.innerHTML = `<div class="grid">${S.round.assets.map(a=>{ const it=f.find(x=>x.key===a.parsed.base); const cls=it?BUCKET_META[it.bucket]?.[1]||'':''; return `<div class="ag ${cls}"><div class="im"><img src="${a.url}" alt=""></div><div class="cap">${esc(a.parsed.base)}<span class="sz num">${a.w}×${a.h}${a.parsed.uaid?'':' · no UAID'}</span></div></div>`; }).join('')}</div>`;
+}
+$$('#view-review .tabs button').forEach(b=>b.addEventListener('click', ()=>{ $$('#view-review .tabs button').forEach(x=>x.classList.toggle('active',x===b)); const t=b.dataset.tab; $('#rv-findings').hidden=t!=='findings'; $('#rv-assets').hidden=t!=='assets'; $('#rv-studio').hidden=t!=='studio'; }));
+$('#rv-run-data').addEventListener('click', ()=>{ if (!S.round.assets.length&&!S.round.frames.length){ toast('Drop frame exports or the layer XML first'); return; } runDataChecks(); renderFindings(); toast('Data checks done'); });
+$('#rv-run-vision').addEventListener('click', runVisionChecks);
+$('#rv-clear').addEventListener('click', ()=>{ S.round.assets.forEach(a=>URL.revokeObjectURL(a.url)); S.round={ assets:[], frames:[], files:[], findings:null, visionDone:false, report:'' }; S.chat=[]; $('#ch-log').innerHTML=''; renderReview(); });
+$('#rv-copy').addEventListener('click', ()=>copyText(buildReport(true)));
+$('#rv-save').addEventListener('click', async ()=>{
+  const f=S.round.findings; if (!f){ toast('Run the checks first'); return; } const camp=currentCampaign();
+  const slim = f.filter(x=>x.bucket!=='reference').map(it=>({ name:it.name, uaid:it.uaid||null, bucket:it.bucket, platform:it.expect?.platform||null, issues:it.issues.map(x=>({ text:x.text, sev:x.sev, src:x.src })), size: it.asset?`${it.asset.w}x${it.asset.h}`:null }));
+  const counts = { changes:f.filter(x=>x.bucket==='changes').length, check:f.filter(x=>x.bucket==='check').length, passed:f.filter(x=>x.bucket==='passed').length, missing:f.filter(x=>x.bucket==='missing').length };
+  await Store.save('reviews', { id:uid(), campaignId:S.campaignId, campaign:camp?.name||'', client:camp?.client||'', round:$('#rv-round').value.trim()||'', reviewer:$('#rv-reviewer').value.trim()||S.me||'', at:Date.now(), counts, vision:S.round.visionDone, frames:S.round.assets.length+S.round.frames.length, text:buildReport(true), findings:slim.slice(0,600) });
+  toast('Report saved'); go('reports');
+});
+
+/* ===================== Campaigns ===================== */
+function renderCampaigns(){
+  const tb=$('#camp-table tbody'); const rounds = id => S.reviews.filter(r=>r.campaignId===id).length;
+  tb.innerHTML = S.campaigns.length ? S.campaigns.map(c=>`<tr data-id="${esc(c.id)}" style="cursor:pointer"><td><b>${esc(c.name)}</b></td><td>${esc(c.client||'')}</td><td class="num">${esc(c.job||'')}</td><td class="mono">${esc(c.prefix||'')}</td><td class="num">${c.trackerRows??'–'}</td><td class="num">${c.trackerReady??'–'}</td><td class="num">${rounds(c.id)}</td><td><button class="btn sm" data-open>Open</button></td></tr>`).join('') : `<tr><td colspan="8"><div class="empty">No campaigns yet. Create one, or drop a tracker on the Overview and one is created from the tab name.</div></td></tr>`;
+  $$('#camp-table tbody tr[data-id]').forEach(tr=>tr.addEventListener('click', ()=>showCampaign(tr.dataset.id)));
+  if (S.campaignId && $('#camp-detail').hidden===false) renderCampaignDetail();
+}
+async function showCampaign(id){ S.campaignId=id; ls('ada:lastCampaign', id); await Store.loadTracker(id); renderTopbar(); $('#camp-detail').hidden=false; renderCampaignDetail(); if (S.view!=='campaigns') go('campaigns'); }
+function renderSources(c, rows){
+  const el=$('#cd-sources'); const srcs=c.sources||[]; const inScope=rows.filter(isReady); const present=new Set([...S.round.assets.map(a=>a.parsed.uaid), ...S.round.frames.map(f=>f.uaid)].filter(Boolean)); const withFrame=inScope.filter(r=>present.has(r.uaid)).length;
+  const fr=srcs.find(x=>x.kind==='frames'&&x.via==='drive'); const fg=srcs.find(x=>x.kind==='frames'&&x.via==='figma'); const ord=srcs.find(x=>x.kind==='order');
+  const whats = rows.length||srcs.length ? `<div class="whats"><b>What's going on.</b> ${rows.length?`The order has <b>${rows.length}</b> ICP rows, <b>${inScope.length}</b> in scope${ord?` (from ${esc(ord.label)}${ord.at?', read '+fmtDT(ord.at):''})`:''}.`:'No order loaded yet.'} ${fr?`The Drive folder <b>${esc(fr.label.replace(/^Drive · /,''))}</b> had ${fr.count} frames${fr.platforms?.length?` across ${fr.platforms.length} placements`:''}${fr.deliveries?.length?`; deliveries so far: ${esc(fr.deliveries.join(', '))}`:''}.`:''} ${fg?`The Figma board <b>${esc(fg.label.replace(/^Figma · /,''))}</b> gave ${fg.count} frames${fg.pages?.length?` from ${fg.pages.length===1?'the page':'pages'} ${esc(fg.pages.slice(0,4).join(', '))}${fg.pages.length>4?'…':''}`:''}${fg.platforms?.length?`, ${fg.platforms.length} placements`:''}${fg.edited?`; the board was last edited ${fmtDT(Date.parse(fg.edited))}`:''}.`:''} ${S.round.assets.length?`This round has <b>${S.round.assets.length}</b> frames loaded, covering <b>${withFrame}</b> of the ${inScope.length} rows in scope${inScope.length-withFrame>0?`; <b>${inScope.length-withFrame}</b> still ${inScope.length-withFrame===1?'has':'have'} no frame`:''}.`:(rows.length?' No frames loaded for this round yet.':'')}${c.figma&&!fg?` A Figma link is on file; press Read next to it to pull its frames.`:''}</div>` : '';
+  const sorted=srcs.slice().sort((a,b)=>b.at-a.at);
+  el.innerHTML = whats + (sorted.length ? `<ul class="srcs" style="margin-top:10px">${sorted.map((x,i)=>`<li><span class="k ${esc(x.kind)}">${esc(x.kind)}</span><div style="min-width:0"><div class="lbl" title="${esc(x.label)}">${esc(x.label)}</div><div class="meta">${x.count!=null?x.count+' items · ':''}${x.via==='file'?'dropped':x.via==='drive'?'Google Drive':x.via==='figma'?'Figma':x.via==='google'?'Google Sheets':x.via==='airtable'?'Airtable':'link'} · ${fmtDT(x.at)}</div></div><div style="display:flex;gap:6px">${x.url?`<a class="btn sm" href="${esc(x.url)}" target="_blank" rel="noopener">Open</a><button class="btn sm" data-refresh="${i}">${x.kind==='reference'?'Read':'Refresh'}</button>`:''}<button class="btn sm ghost" data-rmsrc="${i}" aria-label="Remove">×</button></div></li>`).join('')}</ul>` : `<div class="small muted" style="margin-top:8px">No sources yet. Drop a file above or paste a link.</div>`);
+  $$('#cd-sources [data-refresh]').forEach(b=>b.onclick=()=>refreshSource(sorted[+b.dataset.refresh]));
+  $$('#cd-sources [data-rmsrc]').forEach(b=>b.onclick=async()=>{ const x=sorted[+b.dataset.rmsrc]; c.sources=srcs.filter(y=>y!==x); if (x.kind==='order'){ delete S.trackers[c.id]; await Store.saveTracker(c.id, []); c.trackerRows=0; c.trackerReady=0; c.trackerName=''; } await Store.save('campaigns', c); renderCampaignDetail(); renderReview(); });
+}
+
+function renderCampaignDetail(){
+  const c=currentCampaign(); if (!c){ $('#camp-detail').hidden=true; return; } $('#camp-detail').hidden=false;
+  $('#cd-title').textContent=c.name; $('#cd-name').value=c.name||''; $('#cd-client').value=c.client||''; $('#cd-job').value=c.job||''; $('#cd-prefix').value=c.prefix||''; $('#cd-figma').value=c.figma||''; $('#cd-market').value=c.market||'';
+  const rows=S.trackers[c.id]||[]; const el=$('#cd-tracker'); renderSources(c, rows);
+  if (!rows.length){ el.innerHTML=``; return; }
+  const ready=rows.filter(isReady).length, canc=rows.filter(r=>/cancel/i.test(r.studioStatus||'')).length;
+  const byPartner=new Map(); for (const r of rows){ const k=r.partner||r.subChannel||r.channel||'Other'; byPartner.set(k,(byPartner.get(k)||0)+1); }
+  const tabsel = S.pendingTabs && S.pendingTabs.length>1 ? `<label class="f" style="max-width:360px;margin-bottom:10px">Workbook tab in use<select class="input" id="cd-tabsel">${S.pendingTabs.map(t=>`<option ${c.trackerName?.endsWith(t.name)?'selected':''}>${esc(t.name)}</option>`).join('')}</select></label>` : '';
+  el.innerHTML = `${tabsel}<div class="stat"><span class="pill accent">${rows.length} ICP rows</span><span class="pill ok">${ready} ready to build</span>${canc?`<span class="pill">${canc} cancelled</span>`:''}<span class="pill">${esc(c.trackerName||'')}${c.trackerAt?' · '+fmtDate(c.trackerAt):''}</span></div>
+    <div class="small muted" style="margin-bottom:8px">Placements in this order:</div><div class="chips" style="margin-top:0">${[...byPartner.entries()].sort((a,b)=>b[1]-a[1]).slice(0,30).map(([k,n])=>`<span class="chip"><span>${esc(k)}</span><b class="num">${n}</b></span>`).join('')}</div>`;
+  const ts=$('#cd-tabsel'); if (ts) ts.onchange=()=>{ const t=S.pendingTabs.find(x=>x.name===ts.value); if (!t) return; if (t.rows) applyTab(c, t, (c.trackerName||'').split(' · ')[0]); else loadOrderLink(t.url, t.name, 'campaign'); };
+}
+$('#cd-save').addEventListener('click', async ()=>{ const c=currentCampaign(); if (!c) return; Object.assign(c, { name:$('#cd-name').value.trim()||c.name, client:$('#cd-client').value.trim(), job:$('#cd-job').value.trim(), prefix:$('#cd-prefix').value.trim(), figma:$('#cd-figma').value.trim(), market:$('#cd-market').value.trim() }); await Store.save('campaigns', c); $('#cd-saved').textContent='Saved'; setTimeout(()=>$('#cd-saved').textContent='',1500); });
+$('#cd-delete').addEventListener('click', async ()=>{ const c=currentCampaign(); if (!c) return; if (await confirmDlg('Delete this campaign?', `${c.name} and its order rows will be removed. Saved reports stay.`)) { delete S.trackers[c.id]; await Store.remove('campaigns', c.id); S.campaignId=null; $('#camp-detail').hidden=true; renderAll(); } });
+$('#cd-review').addEventListener('click', ()=>go('review'));
+$('#tb-new').addEventListener('click', ()=>{ $('#dn-name').value=''; $('#dn-job').value=''; $('#dn-prefix').value=''; $('#dn-figma').value=''; $('#dlg-new').showModal(); });
+$('#dn-cancel').addEventListener('click', ()=>$('#dlg-new').close());
+$('#dn-create').addEventListener('click', async ()=>{ const name=$('#dn-name').value.trim(); if (!name){ $('#dn-name').focus(); return; } const c=await Store.save('campaigns', { id:uid(), name, client:$('#dn-client').value.trim(), job:$('#dn-job').value.trim(), prefix:$('#dn-prefix').value.trim(), figma:$('#dn-figma').value.trim(), market:'', createdAt:Date.now() }); $('#dlg-new').close(); showCampaign(c.id); });
+
+/* ===================== Rules ===================== */
+const SEL = (name, val, opts) => `<select class="input" data-f="${name}">${opts.map(o=>`<option value="${o[0]}" ${o[0]===val?'selected':''}>${o[1]}</option>`).join('')}</select>`;
+const YN = [['yes','yes'],['no','no'],['order','order'],['flag','flag'],['unknown','unknown']];
+function renderRules(){
+  const r=S.rules; if (!r) return;
+  $('#rl-platforms tbody').innerHTML = r.platforms.map(p=>`<tr data-id="${esc(p.id)}"><td style="min-width:200px"><input class="input" data-f="name" value="${esc(p.name)}"><input class="input mono" data-f="match" value="${esc((p.match||[]).join(', '))}" placeholder="name segments, comma separated" style="margin-top:4px;font-size:11.5px"></td><td>${SEL('logo',p.logo,YN.filter(x=>x[0]!=='order'&&x[0]!=='flag'))}</td><td>${SEL('tt',p.tt,YN.filter(x=>['yes','no','unknown'].includes(x[0])))}</td><td>${SEL('cta',p.cta,YN)}</td><td>${p.status==='observed'?`<span class="pill warn">Observed</span><button class="btn sm" data-confirm style="margin-top:4px">Confirm</button>`:`<span class="pill ok">Confirmed</span>`}</td><td><button class="btn sm ghost" data-del aria-label="Remove">×</button><textarea class="input" data-f="note" style="margin-top:4px;min-width:200px;min-height:44px;font-size:12px">${esc(p.note||'')}</textarea></td></tr>`).join('');
+  const list = (id, arr, allowStatus) => { $(id).innerHTML = arr.map(x=>`<li data-id="${esc(x.id)}"><textarea class="input" data-f="text">${esc(x.text)}</textarea>${allowStatus?(x.status==='observed'?'<button class="btn sm" data-confirm>Confirm</button>':''):''}<button class="btn sm ghost" data-del aria-label="Remove">×</button></li>`).join('') || '<li class="muted small">None.</li>'; };
+  list('#rl-brand', r.brand, true); list('#rl-spec', r.spec, false); list('#rl-video', r.video, false); $('#rl-output').value=r.output||'';
+  $$('#rl-platforms [data-confirm]').forEach(b=>b.onclick=()=>{ const p=r.platforms.find(x=>x.id===b.closest('tr').dataset.id); p.status='confirmed'; Store.saveRules(collectRules()); });
+  $$('#rl-platforms [data-del]').forEach(b=>b.onclick=()=>{ r.platforms = r.platforms.filter(x=>x.id!==b.closest('tr').dataset.id); renderRules(); });
+  for (const [id,key] of [['#rl-brand','brand'],['#rl-spec','spec'],['#rl-video','video']]) { $$(id+' [data-del]').forEach(b=>b.onclick=()=>{ r[key]=r[key].filter(x=>x.id!==b.closest('li').dataset.id); renderRules(); }); $$(id+' [data-confirm]').forEach(b=>b.onclick=()=>{ const x=r[key].find(y=>y.id===b.closest('li').dataset.id); x.status='confirmed'; Store.saveRules(collectRules()); }); }
+}
+function collectRules(){
+  const r=structuredClone(S.rules);
+  $$('#rl-platforms tbody tr').forEach(tr=>{ const p=r.platforms.find(x=>x.id===tr.dataset.id); if (!p) return; p.name=tr.querySelector('[data-f=name]').value.trim(); p.match=tr.querySelector('[data-f=match]').value.split(',').map(s=>s.trim()).filter(Boolean); p.logo=tr.querySelector('[data-f=logo]').value; p.tt=tr.querySelector('[data-f=tt]').value; p.cta=tr.querySelector('[data-f=cta]').value; p.note=tr.querySelector('[data-f=note]').value.trim(); });
+  for (const [id,key] of [['#rl-brand','brand'],['#rl-spec','spec'],['#rl-video','video']]) $$(id+' li[data-id]').forEach(li=>{ const x=r[key].find(y=>y.id===li.dataset.id); if (x) x.text=li.querySelector('[data-f=text]').value.trim(); });
+  r.output=$('#rl-output').value.trim(); r.version=(r.version||1); return r;
+}
+$('#rl-save').addEventListener('click', async ()=>{ await Store.saveRules(collectRules()); $('#rl-saved').textContent='Rules saved'; setTimeout(()=>$('#rl-saved').textContent='',1800); });
+$('#rl-reset').addEventListener('click', async ()=>{ if (await confirmDlg('Restore the default rules?','Your edits to every rule will be replaced by the defaults from the QC spec.','Restore')) Store.saveRules(structuredClone(DEFAULT_RULES)); });
+$('#rl-add-platform').addEventListener('click', ()=>{ S.rules.platforms.push({ id:uid(), name:'New platform', match:[], logo:'unknown', tt:'unknown', cta:'unknown', status:'observed', note:'' }); renderRules(); });
+$('#rl-add-brand').addEventListener('click', ()=>{ S.rules.brand.push({ id:uid(), text:'', status:'confirmed' }); renderRules(); });
+
+/* ===================== Workflows ===================== */
+function currentWf(){ return S.workflows.find(w=>w.id===S.wfId) || S.workflows[0] || null; }
+function renderWorkflows(){
+  const sel=$('#wf-select'); const wf=currentWf(); if (wf) S.wfId=wf.id;
+  sel.innerHTML = S.workflows.map(w=>`<option value="${esc(w.id)}" ${w.id===S.wfId?'selected':''}>${esc(w.name)}</option>`).join('') || '<option>No workflow</option>';
+  if (!wf){ $('#wf-steps').innerHTML='<div class="empty">Create a workflow to begin.</div>'; return; }
+  $('#wf-name').value=wf.name||''; $('#wf-team').value=wf.team||''; $('#wf-freq').value=wf.freq||'';
+  const modes = wf.analysis?.steps||{};
+  $('#wf-steps').innerHTML = wf.steps.map((s,i)=>`<div class="step" draggable="true" data-id="${esc(s.id)}"><div class="grip" aria-hidden="true">⋮⋮</div><div style="min-width:0"><input class="title" data-f="title" value="${esc(s.title)}" aria-label="Step title"><div class="f-row"><input class="input" data-f="note" value="${esc(s.note||'')}" placeholder="Detail"><input class="input" data-f="owner" value="${esc(s.owner||'')}" placeholder="Owner"><input class="input" data-f="tool" value="${esc(s.tool||'')}" placeholder="Tool"><input class="input num" data-f="minutes" type="number" min="0" value="${s.minutes??''}" placeholder="min" aria-label="Minutes"></div></div><div class="mode" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end">${modes[s.id]?`<span class="tag ${modes[s.id].mode}">${modes[s.id].mode}</span>`:''}<div style="display:flex;gap:2px"><button class="btn sm ghost" data-up aria-label="Move up" ${i===0?'disabled':''}>↑</button><button class="btn sm ghost" data-down aria-label="Move down" ${i===wf.steps.length-1?'disabled':''}>↓</button><button class="btn sm ghost" data-del aria-label="Remove">×</button></div></div></div>`).join('');
+  let dragId=null; $$('#wf-steps .step').forEach(el=>{
+    el.addEventListener('dragstart', e=>{ dragId=el.dataset.id; el.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; });
+    el.addEventListener('dragend', ()=>el.classList.remove('dragging'));
+    el.addEventListener('dragover', e=>{ e.preventDefault(); e.dataTransfer.dropEffect='move'; });
+    el.addEventListener('drop', e=>{ e.preventDefault(); if (!dragId||dragId===el.dataset.id) return; collectWf(); const a=wf.steps.findIndex(s=>s.id===dragId), b=wf.steps.findIndex(s=>s.id===el.dataset.id); const [m]=wf.steps.splice(a,1); wf.steps.splice(b,0,m); renderWorkflows(); });
+    el.querySelector('[data-up]').onclick=()=>{ collectWf(); const i=wf.steps.findIndex(s=>s.id===el.dataset.id); if (i>0){ [wf.steps[i-1],wf.steps[i]]=[wf.steps[i],wf.steps[i-1]]; renderWorkflows(); } };
+    el.querySelector('[data-down]').onclick=()=>{ collectWf(); const i=wf.steps.findIndex(s=>s.id===el.dataset.id); if (i<wf.steps.length-1){ [wf.steps[i+1],wf.steps[i]]=[wf.steps[i],wf.steps[i+1]]; renderWorkflows(); } };
+    el.querySelector('[data-del]').onclick=()=>{ collectWf(); wf.steps=wf.steps.filter(s=>s.id!==el.dataset.id); renderWorkflows(); };
+    el.querySelectorAll('input').forEach(inp=>inp.addEventListener('mousedown', e=>e.stopPropagation()));
+  });
+  renderPlan(wf);
+}
+function collectWf(){ const wf=currentWf(); if (!wf) return null; wf.name=$('#wf-name').value.trim()||wf.name; wf.team=$('#wf-team').value.trim(); wf.freq=+$('#wf-freq').value||wf.freq||0; $$('#wf-steps .step').forEach(el=>{ const s=wf.steps.find(x=>x.id===el.dataset.id); if (!s) return; s.title=el.querySelector('[data-f=title]').value.trim(); s.note=el.querySelector('[data-f=note]').value.trim(); s.owner=el.querySelector('[data-f=owner]').value.trim(); s.tool=el.querySelector('[data-f=tool]').value.trim(); s.minutes=+el.querySelector('[data-f=minutes]').value||0; }); return wf; }
+function heuristicPlan(wf){
+  const steps={}; for (const s of wf.steps){ const t=(s.title+' '+(s.note||'')+' '+(s.tool||'')).toLowerCase(); let mode='human', how='Judgement, relationships or craft; keep a person on it.';
+    if (/export|sync|download|import|csv|compare|match|name|size|format|count|log|raise|record|enter|update (the )?tracker|status|deliver/.test(t)) { mode='auto'; how='Rule-based data work: the tool reads the sources and writes the result, a person is told only when something changed or failed.'; }
+    if (/by eye|visual|logo|brand|cta|talent|edge|stray|check.*art|review|qc|proof/.test(t)) { mode='assist'; how='The tool runs every check it can and drafts the findings; a person confirms judgment calls in a fraction of the time.'; }
+    if (/build|design|creative|approve|sign|client call|present|negotiat/.test(t)) { mode='human'; }
+    if (/write|draft|list|comment|email|message|summar/.test(t) && mode!=='auto') { mode='assist'; how='Drafted from the findings in the house format; a person edits and sends.'; }
+    steps[s.id]={ mode, how, savedPct: mode==='auto'?0.85: mode==='assist'?0.55:0 }; }
+  return { steps, summary:'Estimated from the step wording. Run the analysis with the reviewer for a plan that reads your notes.', source:'heuristic', at:Date.now() };
+}
+async function analyzeWf(){
+  const wf=collectWf(); if (!wf) return; const btn=$('#wf-analyze'); btn.disabled=true; btn.textContent='Analyzing…';
+  let plan=null;
+  if (await RV.ready()){ try {
+    const res = await RV.json(`You are an operations consultant automating quality-control workflows for a creative production company. For each step decide: "auto" (software can do it end to end with a person notified only on exceptions), "assist" (software does the checking or drafting, a person confirms), or "human" (judgement, craft or relationships). Estimate the share of today's minutes saved (0 to 1) and say in one sentence how it would run. Also give a two-sentence summary and three concrete first moves.\n\nWORKFLOW: ${wf.name} (${wf.team||'team not given'}), ${wf.freq||'?'} rounds a month.\nSTEPS:\n${wf.steps.map((s,i)=>`${i+1}. [${s.id}] ${s.title}. Owner: ${s.owner||'?'}; tool: ${s.tool||'?'}; ${s.minutes||0} min per round; note: ${s.note||''}`).join('\n')}\n\nWrite plainly, without em dashes. Reply with only JSON: {"summary": string, "firstMoves": [string, string, string], "steps": {"<step id>": {"mode": "auto"|"assist"|"human", "savedPct": number, "how": string}}}`, { tier:'default' });
+    if (res && res.steps) plan={ steps:res.steps, summary:res.summary||'', firstMoves:res.firstMoves||[], source:'reviewer', at:Date.now() };
+  } catch(e){ toast(errCopy(e)); } }
+  if (!plan) plan=heuristicPlan(wf);
+  wf.analysis=plan; await Store.save('workflows', wf); btn.disabled=false; btn.textContent='Analyze and propose automation'; renderWorkflows();
+}
+function renderPlan(wf){
+  const el=$('#wf-plan'); const pill=$('#wf-plan-pill'); const a=wf.analysis;
+  if (!a){ el.innerHTML=`<div class="empty">Analyze a workflow to see which steps can run on their own, which should be assisted, and what stays with a person.</div>`; pill.hidden=true; return; }
+  let total=0, saved=0; const tally={auto:0,assist:0,human:0};
+  for (const s of wf.steps){ const m=a.steps[s.id]; const min=s.minutes||0; total+=min; if (m){ saved+=min*(+m.savedPct||0); tally[m.mode]=(tally[m.mode]||0)+min; } else tally.human+=min; }
+  const pct = total? Math.round(saved/total*100):0; pill.hidden=false; pill.className='pill ok'; pill.textContent=`${pct}% of round time`;
+  const hrs = n => (n/60).toFixed(1);
+  el.innerHTML = `<div class="tiles" style="margin-bottom:12px"><div class="tile"><div class="eyebrow">Today, per round</div><div class="v num">${hrs(total)} h</div></div><div class="tile"><div class="eyebrow">After automation</div><div class="v num ok">${hrs(total-saved)} h</div></div><div class="tile"><div class="eyebrow">Saved per month</div><div class="v num">${hrs(saved*(wf.freq||0))} h</div><div class="small muted">at ${wf.freq||0} rounds</div></div></div>
+    <div class="bar">${['auto','assist','human'].map(m=>`<i class="${m}" style="width:${total?tally[m]/total*100:0}%" title="${m}"></i>`).join('')}</div><div class="legend"><span class="auto">Runs on its own</span><span class="assist">Assisted</span><span class="human">Stays with a person</span></div>
+    <p style="margin:12px 0">${esc(a.summary||'')}</p>
+    ${a.firstMoves?.length?`<div class="eyebrow" style="margin-bottom:6px">First moves</div><ol style="margin:0 0 12px;padding-left:20px">${a.firstMoves.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}
+    <div class="lanes"><div class="lane"><h4>Today</h4><ol>${wf.steps.map(s=>`<li>${esc(s.title)} <span class="muted small num">${s.minutes||0} min</span></li>`).join('')}</ol></div><div class="lane"><h4>With AdAutonomy</h4><ol>${wf.steps.map(s=>{ const m=a.steps[s.id]; return `<li>${esc(s.title)}${m?`<span class="tag ${m.mode}">${m.mode}</span><div class="small muted">${esc(m.how||'')}</div>`:''}</li>`; }).join('')}</ol></div></div>
+    <p class="small muted" style="margin:10px 0 0">${a.source==='heuristic'?'Estimated from the step wording without the reviewer.':'Analysed by the reviewer from your step notes.'} ${a.at?fmtDT(a.at):''}</p>`;
+}
+$('#wf-select').addEventListener('change', e=>{ S.wfId=e.target.value; renderWorkflows(); });
+$('#wf-add-step').addEventListener('click', ()=>{ const wf=collectWf(); if (!wf) return; wf.steps.push({ id:uid(), title:'New step', owner:'', tool:'', minutes:0, note:'' }); renderWorkflows(); });
+$('#wf-save').addEventListener('click', async ()=>{ const wf=collectWf(); if (!wf) return; await Store.save('workflows', wf); $('#wf-saved').textContent='Saved'; setTimeout(()=>$('#wf-saved').textContent='',1500); });
+$('#wf-analyze').addEventListener('click', analyzeWf);
+$('#wf-new').addEventListener('click', async ()=>{ const wf=await Store.save('workflows', { id:uid(), name:'New QC workflow', team:'', freq:4, steps:[{ id:uid(), title:'Request arrives', owner:'PM', tool:'Email', minutes:5, note:'' }], analysis:null }); S.wfId=wf.id; renderWorkflows(); $('#wf-name').focus(); });
+$('#wf-delete').addEventListener('click', async ()=>{ const wf=currentWf(); if (!wf) return; if (await confirmDlg('Delete this workflow?', wf.name)) { await Store.remove('workflows', wf.id); S.wfId=null; renderWorkflows(); } });
+$('#wf-build').addEventListener('click', async ()=>{
+  const txt=$('#wf-describe').value.trim(); if (!txt) return; const btn=$('#wf-build'); btn.disabled=true; btn.textContent='Working…';
+  let steps=null;
+  if (await RV.ready()){ try { const res=await RV.json(`Turn this description of a work process into an ordered list of steps. Reply with only a JSON array of {"title": string (imperative, under 12 words), "owner": string, "tool": string, "minutes": number (estimate per run), "note": string (one detail)}.\n\n${txt}`, { tier:'quick' }); if (Array.isArray(res)) steps=res.map(s=>({ id:uid(), title:String(s.title||'Step'), owner:String(s.owner||''), tool:String(s.tool||''), minutes:+s.minutes||0, note:String(s.note||'') })); } catch(e){ toast(errCopy(e)); } }
+  if (!steps){ steps = txt.split(/(?<=[.;])\s+|\n+/).map(s=>s.trim()).filter(Boolean).map(s=>({ id:uid(), title:s.replace(/[.;]$/,'').slice(0,90), owner:'', tool:'', minutes:10, note:'' })); }
+  const wf=await Store.save('workflows', { id:uid(), name: txt.split(/[.\n]/)[0].slice(0,60)||'New workflow', team:'', freq:4, steps, analysis:null }); S.wfId=wf.id; $('#wf-describe').value=''; btn.disabled=false; btn.textContent='Turn into steps'; renderWorkflows(); toast(`${steps.length} steps drafted`);
+});
+
+/* ===================== Reports ===================== */
+function reportHTML(r){ const lines=(r.text||'').split('\n'); let html='', inList=false; for (const l of lines){ if (/^(Changes needed|Please check|Passed|Not on this board)$/.test(l)){ if (inList){ html+='</ul>'; inList=false; } html+=`<h5>${esc(l)}</h5>`; } else if (l.startsWith('- ')){ if (!inList){ html+='<ul>'; inList=true; } const m=l.slice(2).match(/^([^:]+):\s(.*)$/); html+=`<li>${m?`<span class="fn">${esc(m[1])}</span>: ${esc(m[2])}`:esc(l.slice(2))}</li>`; } else if (l.trim() && !html){ html+=`<p><b>${esc(l)}</b></p>`; } } if (inList) html+='</ul>'; return html; }
+function renderReports(){
+  const tb=$('#rp-table tbody'); const list=S.reviews.slice().sort((a,b)=>b.at-a.at);
+  tb.innerHTML = list.length ? list.map(r=>`<tr data-id="${esc(r.id)}" style="cursor:pointer"><td class="num">${fmtDT(r.at)}</td><td><b>${esc(r.campaign||'')}</b>${r.client?`<div class="small muted">${esc(r.client)}</div>`:''}</td><td>${esc(r.round||'')}</td><td>${esc(r.reviewer||'')}</td><td class="num"><span class="pill ${r.counts?.changes?'crit':''}">${r.counts?.changes??0}</span></td><td class="num"><span class="pill ${r.counts?.check?'warn':''}">${r.counts?.check??0}</span></td><td class="num"><span class="pill ok">${r.counts?.passed??0}</span></td><td class="num">${r.counts?.missing??0}</td><td><button class="btn sm" data-open>Open</button></td></tr>`).join('') : `<tr><td colspan="9"><div class="empty">No saved rounds yet. Save a studio list from the Review view and it appears here for the whole workspace.</div></td></tr>`;
+  $$('#rp-table tr[data-id]').forEach(tr=>tr.addEventListener('click', ()=>openReport(tr.dataset.id)));
+  $('#nav-rev-n').hidden = !S.reviews.length; $('#nav-rev-n').textContent=S.reviews.length;
+}
+function openReport(id){ const r=S.reviews.find(x=>x.id===id); if (!r) return; $('#rp-detail').hidden=false; $('#rp-title').textContent=`${r.campaign||'Campaign'} ${r.round||''} · ${fmtDate(r.at)}${r.reviewer?' · '+r.reviewer:''}`; $('#rp-body').innerHTML = `<div class="stat"><span class="pill ${r.vision?'ok':''}">${r.vision?'Visual checks included':'Data checks only'}</span><span class="pill">${r.frames||0} frames</span></div>`+reportHTML(r); $('#rp-copy').onclick=()=>copyText(r.text||''); $('#rp-delete').onclick=async()=>{ if (await confirmDlg('Delete this report?','It is removed for everyone in the workspace.')) { await Store.remove('reviews', id); $('#rp-detail').hidden=true; } }; $('#rp-detail').scrollIntoView({ behavior:'smooth', block:'start' }); }
+
+/* ===================== Overview ===================== */
+function renderOverview(){
+  const frames=S.reviews.reduce((n,r)=>n+(r.frames||0),0), changes=S.reviews.reduce((n,r)=>n+(r.counts?.changes||0),0), checks=S.reviews.reduce((n,r)=>n+(r.counts?.check||0),0);
+  const observed = (S.rules?.platforms||[]).filter(p=>p.status==='observed');
+  $('#ov-tiles').innerHTML = `<div class="tile"><div class="eyebrow">Campaigns</div><div class="v num">${S.campaigns.length}</div></div><div class="tile"><div class="eyebrow">Rounds saved</div><div class="v num">${S.reviews.length}</div></div><div class="tile"><div class="eyebrow">Frames checked</div><div class="v num">${frames}</div></div><div class="tile"><div class="eyebrow">Changes caught</div><div class="v num ${changes?'crit':''}">${changes}</div></div><div class="tile"><div class="eyebrow">Judgment calls</div><div class="v num ${checks?'warn':''}">${checks}</div></div><div class="tile"><div class="eyebrow">Rules to confirm</div><div class="v num ${observed.length?'warn':'ok'}">${observed.length}</div></div>`;
+  const recent=S.reviews.slice().sort((a,b)=>b.at-a.at).slice(0,6);
+  $('#ov-recent').innerHTML = recent.length ? recent.map(r=>`<li><div class="grow"><div class="t">${esc(r.campaign||'Campaign')} ${esc(r.round||'')}</div><div class="m">${fmtDT(r.at)}${r.reviewer?' · '+esc(r.reviewer):''}</div></div><span class="pill ${r.counts?.changes?'crit':'ok'}">${r.counts?.changes||0} changes</span><span class="pill ${r.counts?.check?'warn':''}">${r.counts?.check||0} check</span><button class="btn sm" data-rp="${esc(r.id)}">Open</button></li>`).join('') : `<li><div class="grow muted small">No rounds saved yet.${!S.campaigns.length?' <button class="btn sm" id="ov-demo" style="margin-left:8px">Load a sample round</button>':''}</div></li>`;
+  $$('#ov-recent [data-rp]').forEach(b=>b.onclick=()=>{ go('reports'); openReport(b.dataset.rp); });
+  const d=$('#ov-demo'); if (d) d.onclick=loadDemo;
+  $('#ov-observed').innerHTML = observed.length ? observed.slice(0,6).map(p=>`<li><div class="grow"><div class="t">${esc(p.name)}</div><div class="m">logo ${esc(p.logo)} · TT ${esc(p.tt)} · CTA ${esc(p.cta)}</div></div><button class="btn sm" data-cf="${esc(p.id)}">Confirm</button></li>`).join('')+(observed.length>6?`<li class="muted small">and ${observed.length-6} more under Rules.</li>`:'') : `<li class="muted small">Every placement rule is confirmed.</li>`;
+  $$('#ov-observed [data-cf]').forEach(b=>b.onclick=()=>{ const p=S.rules.platforms.find(x=>x.id===b.dataset.cf); if (p){ p.status='confirmed'; Store.saveRules(S.rules); toast(`${p.name} confirmed`); } });
+}
+
+/* ===================== Sample round (fictional campaign, drawn in the browser) ===================== */
+function drawFrame(w,h,label,opts={}){ const c=document.createElement('canvas'); c.width=w; c.height=h; const g=c.getContext('2d'); const grad=g.createLinearGradient(0,0,w,h); grad.addColorStop(0,'#1b2a4a'); grad.addColorStop(1,'#3a6ea5'); g.fillStyle=grad; g.fillRect(0,0,w,h); if (opts.bar){ g.fillStyle='#fff'; g.fillRect(0,0,w,1); } g.fillStyle='rgba(255,255,255,.92)'; g.font=`bold ${Math.max(14,Math.round(Math.min(w,h)/9))}px sans-serif`; g.textAlign='center'; g.fillText(label, w/2, h/2); if (opts.cta){ const bw=Math.min(w*.4,180), bh=Math.min(h*.18,44); g.fillStyle='#f5a623'; g.fillRect(w/2-bw/2, h-bh-Math.round(h*.08), bw, bh); g.fillStyle='#111'; g.font=`bold ${Math.round(bh*.5)}px sans-serif`; g.fillText(opts.cta, w/2, h-bh/2-Math.round(h*.08)+Math.round(bh*.18)); } return new Promise(res=>c.toBlob(b=>res(b),'image/png')); }
+async function loadDemo(){
+  go('review'); toast('Building the sample round…');
+  const camp = await Store.save('campaigns', { id:uid(), name:'Harbor Lights S2 (sample)', client:'Sample client', job:'000000', prefix:'HL2', figma:'', market:'US EN', createdAt:Date.now() });
+  S.campaignId=camp.id; ls('ada:lastCampaign', camp.id);
+  const mk=(uaid, partner, dims, fileName, extra={}) => ({ uaid, studioStatus:'READY TO BUILD', assetStatus:'Approved', fileName, workingName:`Harbor Lights S2 – ${partner}`, vendor:'ICP', market:'US', lang:'EN', ctaType:'', cta:'', copy:'', dims, format:'png', partner, channel:'Paid media', reqs:'', addNote:'', ...extra });
+  const rows=[ mk('90001-000101','Goodreads','300x250','HL2_Goodreads_300x250_US_EN_90001-000101'), mk('90001-000102','Goodreads','970x250','HL2_Goodreads_970x250_US_EN_90001-000102'), mk('90001-000103','Email','580x360','HL2_Email_580x360_US_EN_90001-000103',{ ctaType:'No CTA', cta:'No CTA' }), mk('90001-000104','Audible PDP','488x173','HL2_AudiblePDP_488x173_US_EN_90001-000104',{ reqs:'Black and white. No CTA, no logo.', workingName:'Harbor Lights S2 – Nadia Okafor bio banner' }), mk('90001-000105','Amazon Devices','1920x1200','HL2_AmazonDevices_1920x1200_US_EN_90001-000105',{ reqs:'Minimum font size 32pt. CTA button delivered separately.' }), mk('90001-000106','Advertising','520x520','HL2_Advertising_520x520_US_EN_90001-000106'), mk('90001-000107','Audible Web','320x192','HL2_AudibleWeb_320x192_US_EN_90001-000107',{ copy:'Season two of the harbor mystery everyone is talking about', reqs:'Max 51 characters of copy.' }), mk('90001-000108','Apple','1080x1920','HL2_Apple_1080x1920_US_EN_90001-000108',{ reqs:'Art in the upper 60%, lower 40% for live text.' }) ];
+  await Store.saveTracker(camp.id, rows); camp.trackerName='Sample order (fictional)'; camp.trackerRows=rows.length; camp.trackerReady=rows.length; camp.trackerAt=Date.now(); await Store.save('campaigns', camp);
+  const files=[ ['HL2_Goodreads_300x250_US_EN_90001-000101.png',300,250,{cta:'Listen now'}], ['HL2_Goodreads_970x250_US_EN_90001-000102.png',970,250,{cta:'Listen now'}], ['HL2_Email_580x360_US_EN_90001-000103.png',580,360,{cta:'Try it now'}], ['HL2_AudiblePDP_488x173_US_EN_90001-000104.png',488,173,{}], ['HL2_AmazonDevices_1920x1200_US_EN_90001-000105.png',1920,1200,{}], ['HL2_Advertising_520x520_US_EN_90001-000106.png',521,521,{bar:true}], ['HL2_AudibleWeb_320x192_US_EN_90001-000107.png',320,192,{cta:'Listen now'}], ['HL2_Apple_1080x1920_US_EN_90001-000108_Mockup.png',1080,1920,{}] ];
+  const fs=[]; for (const [n,w,h,o] of files){ const b=await drawFrame(w,h,'SAMPLE FRAME',o); fs.push(new File([b], n, { type:'image/png' })); }
+  $('#rv-round').value='R1'; S.chat=[]; $('#ch-log').innerHTML=''; await intake(fs,'overview'); toast('Sample round loaded: fictional campaign, drawn placeholders');
+}
+
+
+/* ===================== Beta review bar (standalone build only) ===================== */
+const FB = { rec:null, chunks:[], blob:null, sr:null, listening:false, finalText:'' };
+function fbContext(){ const camp=currentCampaign(); const sel=document.activeElement?.closest?.('.find')?.querySelector('.fn')?.textContent||''; return { view:S.view, campaign:camp?.name||'', round:$('#rv-round')?.value||'', finding:sel, page:location.href.split('#')[0]+'#'+S.view, at:new Date().toISOString() }; }
+function fbRenderCtx(){ const c=fbContext(); $('#fb-ctx').textContent = `About: ${TITLES[c.view]?.[0]||c.view}${c.campaign?' · '+c.campaign:''}${c.round?' · '+c.round:''}${c.finding?' · '+c.finding:''}`; }
+function fbRenderList(){ const l=ls('ada:fb')||[]; $('#fb-list').innerHTML = l.length ? '<li class="eyebrow" style="border:0;padding-top:4px">Sent</li>'+l.slice(-6).reverse().map(x=>`<li><b>${esc(fmtDT(x.at))}</b> · ${esc(x.view)}<div class="muted">${esc(x.text.slice(0,140))}${x.text.length>140?'…':''}</div></li>`).join('') : ''; }
+function fbOpen(){ if (!$('#fb-name').value) $('#fb-name').value = $('#rv-reviewer')?.value || S.me || ''; fbRenderCtx(); fbRenderList(); $('#fb-status').textContent=''; }
+async function fbToggle(){
+  const btn=$('#fb-mic'), lbl=$('#fb-mic-label');
+  if (FB.listening){ FB.listening=false; btn.classList.remove('on'); try { FB.sr?.stop(); } catch(e){} try { if (FB.rec && FB.rec.state!=='inactive') FB.rec.stop(); } catch(e){} lbl.textContent='Stopped. Edit the words if you like, then send.'; return; }
+  FB.chunks=[]; FB.blob=null;
+  try { const stream = await navigator.mediaDevices.getUserMedia({ audio:true }); const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : ''); FB.rec = mime ? new MediaRecorder(stream, { mimeType:mime }) : new MediaRecorder(stream); FB.rec.ondataavailable = e=>{ if (e.data.size) FB.chunks.push(e.data); }; FB.rec.onstop = ()=>{ FB.blob = new Blob(FB.chunks, { type: FB.rec.mimeType||'audio/webm' }); stream.getTracks().forEach(t=>t.stop()); }; FB.rec.start(250); }
+  catch(e){ lbl.textContent='The microphone was not allowed. Type your note instead.'; return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SR){ FB.sr = new SR(); FB.sr.continuous=true; FB.sr.interimResults=true; FB.sr.lang='en-US'; FB.finalText=$('#fb-text').value.trim(); FB.sr.onresult = ev=>{ let interim=''; for (let i=ev.resultIndex;i<ev.results.length;i++){ const r=ev.results[i]; if (r.isFinal) FB.finalText = (FB.finalText+' '+r[0].transcript).trim(); else interim += r[0].transcript; } $('#fb-text').value = (FB.finalText+' '+interim).trim(); }; FB.sr.onend = ()=>{ if (FB.listening) { try { FB.sr.start(); } catch(e){} } }; try { FB.sr.start(); } catch(e){} lbl.textContent='Listening. Talk naturally; tap again when you are done.'; }
+  else lbl.textContent='Recording. This browser cannot transcribe, so type a line too; John will hear the audio.';
+  FB.listening=true; btn.classList.add('on');
+}
+async function fbSend(){
+  if (FB.listening) fbToggle();
+  const text=$('#fb-text').value.trim(); if (!text && !FB.blob){ $('#fb-status').textContent='Say or type something first.'; return; }
+  const st=$('#fb-status'); st.textContent='Sending…'; $('#fb-send').disabled=true;
+  await new Promise(r=>setTimeout(r, 350));
+  const c=fbContext(); const fd=new FormData(); fd.append('form-name','feedback'); fd.append('name',$('#fb-name').value.trim()); fd.append('kind',$('#fb-kind').value); fd.append('text',text); fd.append('view',c.view); fd.append('campaign',c.campaign); fd.append('round',c.round); fd.append('finding',c.finding); fd.append('page',c.page); fd.append('at',c.at);
+  if (FB.blob && FB.blob.size>0 && FB.blob.size<7.5e6) fd.append('audio', FB.blob, `note-${Date.now()}.${/mp4/.test(FB.blob.type)?'m4a':'webm'}`);
+  try { const r = await fetch('/', { method:'POST', body:fd }); if (!r.ok) throw new Error(r.status); const l=ls('ada:fb')||[]; l.push({ at:c.at, view:c.view, text:text||'(voice note)' }); ls('ada:fb', l); st.textContent='Sent. It will be reviewed and the next version answers it.'; $('#fb-text').value=''; FB.blob=null; FB.finalText=''; fbRenderList(); }
+  catch(e){ st.textContent='Could not send from here. Copy your note and send it by email.'; }
+  finally { $('#fb-send').disabled=false; }
+}
+const BETA_LOG=[ ['Nov 8','No codes, no tokens. The link you were sent carries the workspace connection; this browser keeps it. Boards are read with the workspace’s own Figma connection.'], ['Nov 8','Paste the Figma board link and the Google Sheets link together (in the intake box or in the conversation) and the frames are read straight off the board, rendered as they are right now, and checked against the sheet. The workspace reads the board with its own Figma connection; nothing to set up on your side. Asked for by JoAnna.'], ['Nov 8','Order from a Google Sheets link with a tab name, or an Airtable table link. Frames from a Google Drive folder link. One intake box for everything. Asked for by JoAnna.'], ['Nov 8','Campaign page shows every source feeding a round, with Refresh, and a plain summary of what is going on.'] ];
+if (!window.claude){ const b=$('#beta'); b.hidden=false; const lg=$('#beta-log'); if (lg) lg.innerHTML=BETA_LOG.map(([d,t])=>`<li><b>${esc(d)}</b> · ${esc(t)}</li>`).join(''); b.addEventListener('toggle', ()=>{ if (b.open) fbOpen(); else if (FB.listening) fbToggle(); }); $('#fb-mic').addEventListener('click', fbToggle); $('#fb-send').addEventListener('click', fbSend); }
+
+/* ===================== Boot ===================== */
+(async function boot(){
+  takeKey();
+  go((location.hash||'#overview').replace('#',''));
+  renderSuggestions();
+  try { if (window.claude?.use){ const u = await window.claude.use('user'); if (u){ const me=await u.me(); S.me=me?.name||''; if (S.me) $('#who').textContent=S.me; } } } catch(e){}
+  await Store.init();
+  if (S.campaignId) await Store.loadTracker(S.campaignId);
+  renderAll();
+})();
+</script>
+</body>
+</html>
